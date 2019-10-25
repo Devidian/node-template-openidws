@@ -6,6 +6,21 @@ import { ConfigLoader } from "./lib/tools/ConfigLoader";
 export interface NodeConfig {
 	enabled: boolean,		        // if false this node wont boot
 	tick: number,                   // run loop timeout
+	www: {
+		port: number,
+	},
+	ws: {
+		port: number,
+		host: string,
+		cookieDomain: string
+	},
+	openid: {
+		google: {
+			client_id: string,
+			client_secret: string,
+			redirect_uris: string[]
+		}
+	},
 	[key: string]: any              // other settings
 }
 

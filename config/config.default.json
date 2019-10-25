@@ -4,14 +4,16 @@
     },
     "app": {
         "title": "Node-Template",
-		"service": {
-			"user": "nodejs",
-			"id": "NOTMPL",
-			"name": "node-template",
-			"desc": "Node Template Service Unit",
-			"env": [],
-			"after": ["network.target"]
-		}
+        "service": {
+            "user": "nodejs",
+            "id": "NOTMPL",
+            "name": "node-template",
+            "desc": "Node Template Service Unit",
+            "env": [],
+            "after": [
+                "network.target"
+            ]
+        }
     },
     "cli": {
         "port": 37110,
@@ -21,9 +23,24 @@
     },
     "nodes": {
         "myclass": {
-            "default":{
+            "default": {
                 "enabled": false,
-                "tick": 250
+                "tick": 250,
+                "www": {
+                    "port": 13390
+                },
+                "ws": {
+                    "port": 13380,
+                    "host": "localhost",
+                    "cookieDomain": "localdevelopment.org"
+                },
+                "openid": {
+                    "google": {
+                        "client_id": "",
+                        "client_secret": "",
+                        "redirect_uris": []
+                    }
+                }
             }
         }
     }
