@@ -1,0 +1,30 @@
+{
+    "log": {
+        "level": 1
+    },
+    "app": {
+        "title": "Node-Template",
+		"service": {
+			"user": "nodejs",
+			"id": "NOTMPL",
+			"name": "node-template",
+			"desc": "Node Template Service Unit",
+			"env": [],
+			"after": ["network.target"]
+		}
+    },
+    "cli": {
+        "port": 37110,
+        "commands": [
+            "REBOOT"
+        ]
+    },
+    "nodes": {
+        "myclass": {
+            "default":{
+                "enabled": false,
+                "tick": 250
+            }
+        }
+    }
+}

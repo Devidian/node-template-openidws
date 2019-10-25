@@ -1,0 +1,20 @@
+[Unit]
+Description=PH_SERVICE_DESC
+PH_SERVICE_AFTER
+
+[Service]
+WorkingDirectory=PH_WORKING_DIR
+ExecStart=/usr/bin/nodejs bin/main.js PH_CONFIG
+ExecReload=/usr/bin/nodejs bin/app-cli.js PH_CONFIG REBOOT
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=PH_SERVICE_ID
+User=PH_SERVICE_USER
+Group=PH_SERVICE_USER
+Environment=NODE_ENV=production
+PH_SERVICE_ENV
+
+[Install]
+WantedBy=multi-user.target
