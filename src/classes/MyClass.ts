@@ -14,6 +14,10 @@ import { WorkerProcess } from "./WorkerProcess";
 import WebSocket = require("ws");
 import express = require("express");
 import favicon = require("serve-favicon");
+import querystring = require("querystring");
+import { get as getPromise } from "request-promise-native";
+import { User } from "./User";
+import { GoogleOpenIdData } from "src/models/OpenIdData";
 
 /**
  *
@@ -23,7 +27,7 @@ import favicon = require("serve-favicon");
  */
 interface ExtendedWSClient extends WebSocket {
 	data: {
-		user: any,
+		user: User,
 		[key: string]: any
 	},
 	upgradeReq: any,
@@ -93,8 +97,11 @@ export class MyClass extends WorkerProcess {
 		this.wwwApplication.use(favicon(resolve(rootDir, 'assets', 'favicon.ico')));
 		const apiMiddleware = [express.json({}), express.urlencoded({ extended: true })];
 		// ROUTES		//
-		this.wwwApplication.get("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
+		// this.wwwApplication.get("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
+		// this.wwwApplication.get("/login/microsoft/", apiMiddleware, this.routeOpenIDGoogleCallback());
+		this.wwwApplication.get("/login/steam/", apiMiddleware, this.routeOpenIDSteamCallback());
 		this.wwwApplication.post("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
+		this.wwwApplication.post("/login/microsoft/", apiMiddleware, this.routeOpenIDMicrosoftCallback());
 
 		// others
 		this.wwwApplication.get("*", this.routeNotAvailable());
@@ -115,7 +122,7 @@ export class MyClass extends WorkerProcess {
 		this.wsServer.on("headers", (headers, req: IncomingMessage) => {
 			const { nonce } = this.getCookies(req);
 
-			headers.push(`Set-Cookie: NONCE=${nonce || generators.nonce()}; Max-Age=${60 * 60 * 4}; Domain=${MyClass.NodeConfig.ws.cookieDomain}`);
+			headers.push(`Set-Cookie: NONCE=${nonce || generators.nonce()}; Max-Age=${60 * 60 * 4}; Domain=${MyClass.NodeConfig.ws.cookieDomain}; secure`);
 		});
 
 		this.wsServer.on("connection", (wsClient: ExtendedWSClient, req: IncomingMessage) => {
@@ -154,15 +161,16 @@ export class MyClass extends WorkerProcess {
 	 * @memberof MyClass
 	 */
 	protected async createIssuer(): Promise<void> {
+		const openIDConfig = MyClass.NodeConfig.openid;
 		try {
-			const googleIssuer = await Issuer.discover("https://accounts.google.com");
+			const config = openIDConfig.google;
+			const googleIssuer = await Issuer.discover(config.discover_url);
 			this.issuer.set("google", googleIssuer);
-			const config = MyClass.NodeConfig.openid.google;
 			const googleClient = new googleIssuer.Client({
 				client_id: config.client_id,
 				client_secret: config.client_secret,
 				redirect_uris: config.redirect_uris,
-				response_types: ["code"],
+				response_type: "code id_token", //s: ["code", "id_token"],
 				// default_max_age: 300,
 			});
 
@@ -170,6 +178,22 @@ export class MyClass extends WorkerProcess {
 
 		} catch (error) {
 			Logger(911, "createIssuer->google", error);
+		}
+
+		try {
+			const config = openIDConfig.microsoft;
+			const microsoftIssuer = await Issuer.discover(config.discover_url);
+			this.issuer.set("microsoft", microsoftIssuer);
+			const microsoftClient = new microsoftIssuer.Client({
+				client_id: config.client_id,
+				client_secret: config.client_secret,
+				redirect_uris: config.redirect_uris,
+				response_type: "code id_token",
+				// default_max_age: 300,
+			});
+			this.clients.set("microsoft", microsoftClient);
+		} catch (error) {
+			Logger(911, "createIssuer->microsoft", error);
 		}
 	}
 
@@ -192,7 +216,7 @@ export class MyClass extends WorkerProcess {
 					// wsClient.data.verifier = code_verifier;
 					// const code_challenge = generators.codeChallenge(code_verifier);
 					const nonce = wsClient.data.nonce;
-					Logger(0, "handleAuthMessage", `Using ${nonce} for authorizationUrl`);
+					Logger(0, "handleAuthMessage", `Using ${nonce} for google authorizationUrl`);
 					const url = gc.authorizationUrl({
 						scope: ["openid", "email", "profile"].join(" "),
 						response_mode: 'form_post',
@@ -212,8 +236,58 @@ export class MyClass extends WorkerProcess {
 				}
 				break;
 
+			case AuthTypes.MICROSOFT:
+				Logger(0, "handleAuthMessage", `New microsoft auth message`);
+				const mc = this.clients.get("microsoft");
+				if (mc) {
+					const nonce = wsClient.data.nonce;
+					Logger(0, "handleAuthMessage", `Using ${nonce} for microsoft authorizationUrl`);
+					const url = mc.authorizationUrl({
+						scope: ["openid", "email", "profile"].join(" "),
+						response_mode: 'form_post',
+						nonce: nonce,
+						// claims: {
+						// 	userinfo: {
+						// 		nickname: { essential: true },
+						// 		family_name: { essential: true },
+						// 		given_name: { essential: true },
+						// 	},
+						// },
+						// max_age: "300",
+						// code_challenge,
+						// code_challenge_method: "S256",
+
+					});
+					const code = Buffer.alloc(1);
+					code.writeUInt8(wsCodes.AUTH, 0);
+					const bufContent = Buffer.from(url);
+					wsClient.send(Buffer.concat([
+						code,
+						bufContent
+					]));
+				}
+				break;
+			// NON connect providers
+			case AuthTypes.STEAM:
+				Logger(0, "handleAuthMessage", `New steam auth message`);
+				try {
+
+					const config = MyClass.NodeConfig.openid.steam;
+					const qs = querystring.encode(config.params);
+					const code = Buffer.alloc(1);
+					code.writeUInt8(wsCodes.AUTH, 0);
+					const bufContent = Buffer.from(config.basic_url + "?" + qs);
+					wsClient.send(Buffer.concat([
+						code,
+						bufContent
+					]));
+
+				} catch (error) {
+					Logger(911, "handleAuthMessage.STEAM", error);
+				}
+				break;
 			default:
-				console.log(`Unknown auth message type ${type}`);
+				Logger(911, "handleAuthMessage", `Unknown auth message type ${type}`);
 				break;
 		}
 	}
@@ -233,12 +307,60 @@ export class MyClass extends WorkerProcess {
 				const gc = this.clients.get("google");
 				const params = gc.callbackParams(req);
 				const [redirectUri] = config.redirect_uris; // Todo: handle multiple redirect uris (is there any case=?)
-				Logger(0, "routeOpenIDGoogleCallback", `Authorization callback ${redirectUri} uses nonce=>${nonce} and params=>`, params);
+				// Logger(0, "routeOpenIDGoogleCallback", `Authorization callback ${redirectUri} uses nonce=>${nonce} and params=>`, params);
 				const tokenSet = await gc.callback(redirectUri, params, {
 					nonce: nonce,
 					// max_age: 300
 				});
-				const user = await gc.userinfo(tokenSet);
+				const user: GoogleOpenIdData = await gc.userinfo(tokenSet);
+
+				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+				res.status(200).send(content).end();
+
+				const U = User.createFromGoogle(user);
+
+				const code = Buffer.alloc(2);
+				code.writeUInt8(wsCodes.USER, 0);
+				code.writeUInt8(userCodes.SELF, 1);
+
+				const wsClient = this.getWsClientByNONCE(nonce);
+				wsClient.data.user = U;
+				wsClient.data.tokenSet = tokenSet;
+				wsClient.send(Buffer.concat([
+					code,
+					Buffer.from(JSON.stringify(U.exportProfile()))
+				]));
+			} catch (error) {
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDGoogleCallback]", error);
+				res.status(500).end();
+			}
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @returns {RequestHandlerParams}
+	 * @memberof MyClass
+	 */
+	protected routeOpenIDMicrosoftCallback(): RequestHandlerParams {
+		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			try {
+				const config = MyClass.NodeConfig.openid.microsoft;
+				const { nonce } = this.getCookies(req);
+				const mc = this.clients.get("microsoft");
+				const params = mc.callbackParams(req);
+				const [redirectUri] = config.redirect_uris; // Todo: handle multiple redirect uris (is there any case=?)
+				// Logger(0, "routeOpenIDMicrosoftCallback", `Authorization callback ${redirectUri} uses nonce=>${nonce} and params=>`, params);
+				const tokenSet = await mc.callback(redirectUri, params, {
+					nonce: nonce,
+					// max_age: 300
+				});
+				const user = await mc.userinfo(tokenSet);
+				// console.log(tokenSet, tokenSet.claims(), user);
+
+				const U = User.createFromMicrosoft(user);
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
@@ -247,15 +369,63 @@ export class MyClass extends WorkerProcess {
 				code.writeUInt8(wsCodes.USER, 0);
 				code.writeUInt8(userCodes.SELF, 1);
 
-				const wsClient = this.getWsClientByNONCE(nonce)
-				wsClient.data.user = user;
+				const wsClient = this.getWsClientByNONCE(nonce);
+				wsClient.data.user = U;
 				wsClient.data.tokenSet = tokenSet;
 				wsClient.send(Buffer.concat([
 					code,
-					Buffer.from(JSON.stringify(user))
+					Buffer.from(JSON.stringify(U.exportProfile()))
 				]));
 			} catch (error) {
-				Logger(911, "@W" + MyProcess.id, "[routeOpenIDGoogleCallback]", error);
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
+				res.status(500).end();
+			}
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @returns {RequestHandlerParams}
+	 * @memberof MyClass
+	 */
+	protected routeOpenIDSteamCallback(): RequestHandlerParams {
+		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			try {
+				const config = MyClass.NodeConfig.openid.steam;
+				const { nonce } = this.getCookies(req);
+
+				const steamId64 = req.query["openid.claimed_id"].split("/").pop();
+				const api_interface = "ISteamUser";
+				const api_method = "GetPlayerSummaries";
+				const api_version = "0002";
+
+				const profileRaw = await getPromise(`https://api.steampowered.com/${api_interface}/${api_method}/v${api_version}/?key=${config.api_key}&format=json&steamids=${steamId64}`);
+				const profile: { response: { players: any[] } } = JSON.parse(profileRaw);
+
+				// Logger(0, "routeOpenIDSteamCallback", steamId64, profile.response.players);
+				const [user] = profile.response.players;
+
+				const U = User.createFromSteam(user);
+
+				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+				res.status(200).send(content).end();
+
+
+				const code = Buffer.alloc(2);
+				code.writeUInt8(wsCodes.USER, 0);
+				code.writeUInt8(userCodes.SELF, 1);
+
+				const wsClient = this.getWsClientByNONCE(nonce);
+				wsClient.data.user = U;
+				// wsClient.data.tokenSet = tokenSet;
+				wsClient.send(Buffer.concat([
+					code,
+					Buffer.from(JSON.stringify(U.exportProfile()))
+				]));
+			} catch (error) {
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
 				res.status(500).end();
 			}
 		}

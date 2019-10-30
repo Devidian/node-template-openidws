@@ -5,10 +5,19 @@ export enum wsCodes {
 
 export enum userCodes {
     SELF,
-    OTHER
+    OTHER,
 };
 
 export enum AuthTypes {
     LOCAL,
+    // OpenID connect provider
     GOOGLE,
+    MICROSOFT,
+    PAYPAL,
+    SALESFORCE,
+    YAHOO,
+    PHANTAUTH,
+    // OpenID provider (non-connect)
+    FACEBOOK,
+    STEAM
 };

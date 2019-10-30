@@ -36,9 +36,52 @@
                 },
                 "openid": {
                     "google": {
+                        "discover_url": "https://accounts.google.com/.well-known/openid-configuration",
                         "client_id": "",
                         "client_secret": "",
                         "redirect_uris": []
+                    },
+                    "microsoft": {
+                        "discover_url": "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
+                        "client_id": "",
+                        "client_secret": "",
+                        "redirect_uris": []
+                    },
+                    "paypal": {
+                        "discover_url": "https://www.paypalobjects.com/.well-known/openid-configuration",
+                        "client_id": "",
+                        "client_secret": "",
+                        "redirect_uris": []
+                    },
+                    "salesforce": {
+                        "discover_url": "https://login.salesforce.com/.well-known/openid-configuration",
+                        "client_id": "",
+                        "client_secret": "",
+                        "redirect_uris": []
+                    },
+                    "yahoo": {
+                        "discover_url": "https://login.yahoo.com/.well-known/openid-configuration",
+                        "client_id": "",
+                        "client_secret": "",
+                        "redirect_uris": []
+                    },
+                    "phantauth": {
+                        "discover_url": "https://phantauth.net/.well-known/openid-configuration",
+                        "client_id": "",
+                        "client_secret": "",
+                        "redirect_uris": []
+                    },
+                    "steam": {
+                        "basic_url": "https://steamcommunity.com/openid/login",
+                        "params": {
+                            "openid.ns": "http://specs.openid.net/auth/2.0",
+                            "openid.mode": "checkid_setup",
+                            "openid.return_to": "",
+                            "openid.realm": "",
+                            "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
+                            "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select"
+                        },
+                        "api_key": ""
                     }
                 }
             }

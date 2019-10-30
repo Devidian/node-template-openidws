@@ -15,10 +15,55 @@ export interface NodeConfig {
 		cookieDomain: string
 	},
 	openid: {
-		google: {
+		google?: {
+			discover_url: string,
 			client_id: string,
 			client_secret: string,
 			redirect_uris: string[]
+		},
+		microsoft?: {
+			discover_url: string,
+			client_id: string,
+			client_secret: string,
+			redirect_uris: string[],
+		},
+		paypal?: {
+			discover_url: string,
+			client_id: string,
+			client_secret: string,
+			redirect_uris: string[],
+		},
+		salesforce?: {
+			discover_url: string,
+			client_id: string,
+			client_secret: string,
+			redirect_uris: string[],
+		},
+		yahoo?: {
+			discover_url: string,
+			client_id: string,
+			client_secret: string,
+			redirect_uris: string[],
+		},
+		phantauth?: {
+			discover_url: string,
+			client_id: string,
+			client_secret: string,
+			redirect_uris: string[],
+		},
+		// non connect standard
+		// facebook
+		steam?: {
+			basic_url: string,
+			params: {
+				"openid.ns": string,
+				"openid.mode": string,
+				"openid.return_to": string,
+				"openid.realm": string,
+				"openid.identity": string,
+				"openid.claimed_id": string,
+			},
+			api_key: string,
 		}
 	},
 	[key: string]: any              // other settings
