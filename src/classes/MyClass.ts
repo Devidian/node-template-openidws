@@ -5,19 +5,20 @@ import { readFileSync } from "fs";
 import { IncomingMessage, Server } from "http";
 import { Client, generators, Issuer } from "openid-client";
 import { basename, resolve } from "path";
+import { get as getPromise } from "request-promise-native";
+import { GoogleOpenIdData } from "src/models/OpenIdData";
 import { isBuffer } from "util";
 import { Data, Server as wss } from "ws";
 import { cfg, NodeConfig, rootDir } from "../config";
 import { Logger } from "../lib/tools/Logger";
 import { AuthTypes, userCodes, wsCodes } from "../models/enums";
+import { User } from "./User";
 import { WorkerProcess } from "./WorkerProcess";
 import WebSocket = require("ws");
 import express = require("express");
 import favicon = require("serve-favicon");
 import querystring = require("querystring");
-import { get as getPromise } from "request-promise-native";
-import { User } from "./User";
-import { GoogleOpenIdData } from "src/models/OpenIdData";
+import uuidv4 = require("uuid/v4");
 
 /**
  *
@@ -99,6 +100,7 @@ export class MyClass extends WorkerProcess {
 		// ROUTES		//
 		// this.wwwApplication.get("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		// this.wwwApplication.get("/login/microsoft/", apiMiddleware, this.routeOpenIDGoogleCallback());
+		this.wwwApplication.get("/login/facebook/", apiMiddleware, this.routeOpenIDFacebookCallback());
 		this.wwwApplication.get("/login/steam/", apiMiddleware, this.routeOpenIDSteamCallback());
 		this.wwwApplication.post("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		this.wwwApplication.post("/login/microsoft/", apiMiddleware, this.routeOpenIDMicrosoftCallback());
@@ -286,6 +288,26 @@ export class MyClass extends WorkerProcess {
 					Logger(911, "handleAuthMessage.STEAM", error);
 				}
 				break;
+			case AuthTypes.FACEBOOK:
+				Logger(0, "handleAuthMessage", `New facebook auth message`);
+				try {
+					const config = MyClass.NodeConfig.openid.facebook;
+					const params = Object.assign({}, config.params);
+					params.state = uuidv4();
+					const qs = querystring.encode(params);
+					const code = Buffer.alloc(1);
+					code.writeUInt8(wsCodes.AUTH, 0);
+					const bufContent = Buffer.from(config.basic_url + "?" + qs);
+					wsClient.data.fbstate = params.state;
+					wsClient.send(Buffer.concat([
+						code,
+						bufContent
+					]));
+
+				} catch (error) {
+					Logger(911, "handleAuthMessage.FACEBOOK", error);
+				}
+				break;
 			default:
 				Logger(911, "handleAuthMessage", `Unknown auth message type ${type}`);
 				break;
@@ -426,6 +448,41 @@ export class MyClass extends WorkerProcess {
 				]));
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
+				res.status(500).end();
+			}
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @returns {RequestHandlerParams}
+	 * @memberof MyClass
+	 */
+	protected routeOpenIDFacebookCallback(): RequestHandlerParams {
+		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			try {
+				const config = MyClass.NodeConfig.openid.facebook;
+				const { nonce } = this.getCookies(req);
+
+				console.log("Facebook", req.query, req.body, req.params);
+
+				// const U = User.createFromFacebook(user);
+
+				const code = Buffer.alloc(2);
+				code.writeUInt8(wsCodes.USER, 0);
+				code.writeUInt8(userCodes.SELF, 1);
+
+				const wsClient = this.getWsClientByNONCE(nonce);
+				// wsClient.data.user = U;
+				// wsClient.send(Buffer.concat([
+				// 	code,
+				// 	Buffer.from(JSON.stringify(U.exportProfile()))
+				// ]));
+
+			} catch (error) {
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDFacebookCallback]", error);
 				res.status(500).end();
 			}
 		}

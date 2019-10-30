@@ -52,7 +52,14 @@ export interface NodeConfig {
 			redirect_uris: string[],
 		},
 		// non connect standard
-		// facebook
+		facebook?: {
+			basic_url: string,
+			params: {
+				client_id: string,
+				redirect_uri: string,
+				state: string
+			}
+		},
 		steam?: {
 			basic_url: string,
 			params: {

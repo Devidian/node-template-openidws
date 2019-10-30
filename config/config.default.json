@@ -71,6 +71,14 @@
                         "client_secret": "",
                         "redirect_uris": []
                     },
+                    "facebook": {
+                        "basic_url": "https://www.facebook.com/v5.0/dialog/oauth",
+                        "params": {
+                            "client_id": "",
+                            "redirect_uri": "",
+                            "state": ""
+                        }
+                    },
                     "steam": {
                         "basic_url": "https://steamcommunity.com/openid/login",
                         "params": {

@@ -1,6 +1,6 @@
-import { OpenIdData, GoogleOpenIdData, MicrosoftOpenIdData, SteamOpenIdData } from "../models/OpenIdData";
+import { DatabaseUser } from "../models/DatabaseUser";
+import { GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, SteamOpenIdData } from "../models/OpenIdData";
 import uuidv4 = require("uuid/v4");
-import { DatabaseUser } from "src/models/DatabaseUser";
 
 export class User {
 	protected _id: string = "_new_";
