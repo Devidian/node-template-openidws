@@ -6,7 +6,7 @@ import { IncomingMessage, Server } from "http";
 import { Client, generators, Issuer } from "openid-client";
 import { basename, resolve } from "path";
 import { get as getPromise } from "request-promise-native";
-import { GoogleOpenIdData } from "src/models/OpenIdData";
+import { GoogleOpenIdData, FacebookOpenIdData } from "src/models/OpenIdData";
 import { isBuffer } from "util";
 import { Data, Server as wss } from "ws";
 import { cfg, NodeConfig, rootDir } from "../config";
@@ -19,6 +19,8 @@ import express = require("express");
 import favicon = require("serve-favicon");
 import querystring = require("querystring");
 import uuidv4 = require("uuid/v4");
+import { Hmac, createHmac } from "crypto";
+import { FacebookSignedPayload } from "src/models/FacebookSignedPayload";
 
 /**
  *
@@ -100,7 +102,9 @@ export class MyClass extends WorkerProcess {
 		// ROUTES		//
 		// this.wwwApplication.get("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		// this.wwwApplication.get("/login/microsoft/", apiMiddleware, this.routeOpenIDGoogleCallback());
-		this.wwwApplication.get("/login/facebook/", apiMiddleware, this.routeOpenIDFacebookCallback());
+		this.wwwApplication.get("/login/facebook/", apiMiddleware, this.routeOpenIDFacebookLoginCallback());
+		this.wwwApplication.post("/logout/facebook/", apiMiddleware, this.routeOpenIDFacebookLogoutCallback());
+		this.wwwApplication.post("/delete/facebook/", apiMiddleware, this.routeOpenIDFacebookDeleteCallback());
 		this.wwwApplication.get("/login/steam/", apiMiddleware, this.routeOpenIDSteamCallback());
 		this.wwwApplication.post("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		this.wwwApplication.post("/login/microsoft/", apiMiddleware, this.routeOpenIDMicrosoftCallback());
@@ -352,6 +356,7 @@ export class MyClass extends WorkerProcess {
 					code,
 					Buffer.from(JSON.stringify(U.exportProfile()))
 				]));
+				Logger(0, "", `User logged in (google): ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDGoogleCallback]", error);
 				res.status(500).end();
@@ -398,6 +403,7 @@ export class MyClass extends WorkerProcess {
 					code,
 					Buffer.from(JSON.stringify(U.exportProfile()))
 				]));
+				Logger(0, "", `User logged in (microsoft): ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
 				res.status(500).end();
@@ -446,10 +452,37 @@ export class MyClass extends WorkerProcess {
 					code,
 					Buffer.from(JSON.stringify(U.exportProfile()))
 				]));
+				Logger(0, "", `User logged in (steam): ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
 				res.status(500).end();
 			}
+		}
+	}
+
+	/**
+	 * decode facebook signed requests
+	 *
+	 * @protected
+	 * @param {string} data
+	 * @returns {FacebookSignedPayload}
+	 * @memberof MyClass
+	 */
+	protected decodeFacebookSignedRequest(data: string): FacebookSignedPayload {
+		try {
+			const [sigRaw, payloadRaw] = data.split(".");
+			const signature = Buffer.from(sigRaw, "base64").toString("utf8");
+			const payloadString = Buffer.from(payloadRaw, "base64").toString("utf8");
+			const payload = JSON.parse(payloadString);
+
+			const hmac = createHmac("sha256", MyClass.NodeConfig.openid.facebook.client_secret);
+			const verifySig = hmac.update(payloadString).digest("hex");
+			console.log(signature, payload, verifySig);
+
+			return payload;
+
+		} catch (error) {
+			throw error;
 		}
 	}
 
@@ -460,33 +493,96 @@ export class MyClass extends WorkerProcess {
 	 * @returns {RequestHandlerParams}
 	 * @memberof MyClass
 	 */
-	protected routeOpenIDFacebookCallback(): RequestHandlerParams {
+	protected routeOpenIDFacebookLoginCallback(): RequestHandlerParams {
 		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 			try {
 				const config = MyClass.NodeConfig.openid.facebook;
 				const { nonce } = this.getCookies(req);
-
-				console.log("Facebook", req.query, req.body, req.params);
-
-				// const U = User.createFromFacebook(user);
-
-				const code = Buffer.alloc(2);
-				code.writeUInt8(wsCodes.USER, 0);
-				code.writeUInt8(userCodes.SELF, 1);
-
 				const wsClient = this.getWsClientByNONCE(nonce);
-				// wsClient.data.user = U;
-				// wsClient.send(Buffer.concat([
-				// 	code,
-				// 	Buffer.from(JSON.stringify(U.exportProfile()))
-				// ]));
 
+				// console.log("routeOpenIDFacebookLoginCallback", req.query, req.body, req.params);
+
+				const { code, state } = req.query;
+
+				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+				res.status(200).send(content).end();
+
+				if (state !== wsClient.data.fbstate) {
+					Logger(511, "", `unequal state during fb-login process! is: ${state} expected: ${wsClient.data.fbstate}`);
+					// todo: message to frontend
+					return;
+				}
+				const accessKeyRaw = await getPromise(`https://graph.facebook.com/v5.0/oauth/access_token?client_id=${config.params.client_id}&redirect_uri=${config.params.redirect_uri}&client_secret=${config.client_secret}&code=${code}`);
+
+				const { access_token, token_type, expires_in } = JSON.parse(accessKeyRaw);
+
+				// console.log(access_token, token_type, expires_in);
+
+				const profileRaw = await getPromise(`https://graph.facebook.com/v5.0/me?fields=id%2Cname%2Cpicture&access_token=${access_token}`);
+
+				// const { id, name, picture } = JSON.parse(profileRaw);
+				const openIdData: FacebookOpenIdData = {
+					access_token,
+					token_type,
+					expires_in,
+					profile: JSON.parse(profileRaw),
+				};
+
+				const U = User.createFromFacebook(openIdData);
+
+				const responseCode = Buffer.alloc(2);
+				responseCode.writeUInt8(wsCodes.USER, 0);
+				responseCode.writeUInt8(userCodes.SELF, 1);
+
+				wsClient.data.user = U;
+				wsClient.send(Buffer.concat([
+					responseCode,
+					Buffer.from(JSON.stringify(U.exportProfile()))
+				]));
+				Logger(0, "", `User logged in (facebook): ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDFacebookCallback]", error);
 				res.status(500).end();
 			}
 		}
 	}
+
+	protected routeOpenIDFacebookLogoutCallback(): RequestHandlerParams {
+		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			try {
+				// console.log("routeOpenIDFacebookLogoutCallback", req.query, req.body, req.params);
+				const { signed_request } = req.body;
+				const data = this.decodeFacebookSignedRequest(signed_request);
+
+				console.log(data);
+
+				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+				res.status(200).send(content).end();
+			} catch (error) {
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDFacebookLogoutCallback]", error);
+				res.status(500).end();
+			}
+		}
+	}
+
+	protected routeOpenIDFacebookDeleteCallback(): RequestHandlerParams {
+		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			try {
+				// console.log("routeOpenIDFacebookDeleteCallback", req.query, req.body, req.params);
+				const { signed_request } = req.body;
+				const data = this.decodeFacebookSignedRequest(signed_request);
+
+				console.log(data);
+
+				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+				res.status(200).send(content).end();
+			} catch (error) {
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDFacebookDeleteCallback]", error);
+				res.status(500).end();
+			}
+		}
+	}
+
 
 	/**
 	 *

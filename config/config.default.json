@@ -77,7 +77,8 @@
                             "client_id": "",
                             "redirect_uri": "",
                             "state": ""
-                        }
+                        },
+                        "client_secret": ""
                     },
                     "steam": {
                         "basic_url": "https://steamcommunity.com/openid/login",

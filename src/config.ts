@@ -58,7 +58,8 @@ export interface NodeConfig {
 				client_id: string,
 				redirect_uri: string,
 				state: string
-			}
+			},
+			client_secret: string,
 		},
 		steam?: {
 			basic_url: string,

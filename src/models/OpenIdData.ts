@@ -38,8 +38,29 @@ export interface SteamOpenIdData {
     loccityid?: number,
 }
 
+export interface FacebookOpenIdProfile {
+    id: string,
+    name: string,
+    picture: {
+        data: {
+            height: number,
+            is_silhouette: boolean,
+            url: string,
+            width: number,
+        },
+    },
+}
+
+export interface FacebookOpenIdData {
+    access_token: string,
+    token_type: string,
+    expires_in: number,
+    profile: FacebookOpenIdProfile
+}
+
 export interface OpenIdData {
     google?: GoogleOpenIdData,
     microsoft?: MicrosoftOpenIdData,
-    steam?: SteamOpenIdData
+    steam?: SteamOpenIdData,
+    facebook?: FacebookOpenIdData
 }
