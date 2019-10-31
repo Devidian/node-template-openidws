@@ -147,6 +147,9 @@ export class WSAuthServer extends WorkerProcess {
 
 			const { nonce } = this.getCookies(req);
 
+			//TODO: why is nonce not set? find a better solution as force reconnect
+			if (!nonce) { wsClient.close(); return; }
+
 			wsClient.data = {
 				user: null,
 				nonce: nonce,
