@@ -1,5 +1,6 @@
 'use strict';
-import { NodeConfig } from "../config";
+import { worker as MyProcess } from "cluster";
+import { cfg, NodeConfig } from "../config";
 
 /**
  *
@@ -10,7 +11,12 @@ import { NodeConfig } from "../config";
  * @extends {MongoApp}
  */
 export abstract class WorkerProcess {
-	protected abstract run(): void;
+	protected static _NodeConfig: NodeConfig = null;
+	protected timer: NodeJS.Timer = null;
+	protected run(): void {
+		process.title = cfg.app.title + "@W" + MyProcess.id;
+		this.timer.refresh();
+	}
 	public abstract destroy(): Promise<boolean>;
 	public abstract updateConfig(nc: NodeConfig): void;
 }
