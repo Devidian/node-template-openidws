@@ -16,25 +16,11 @@ import { Logger } from "../lib/tools/Logger";
 import { AuthTypes, userCodes, wsCodes } from "../models/enums";
 import { User } from "./User";
 import { WorkerProcess } from "./WorkerProcess";
-import WebSocket = require("ws");
 import express = require("express");
 import favicon = require("serve-favicon");
 import querystring = require("querystring");
 import uuidv4 = require("uuid/v4");
-
-/**
- *
- *
- * @interface ExtendedWSClient
- * @extends {WebSocket}
- */
-interface ExtendedWSClient extends WebSocket {
-	data: {
-		user: User,
-		[key: string]: any
-	},
-	upgradeReq: any,
-}
+import { ExtendedWSClient } from "../models/ExtendedWSClient";
 
 /**
  *
@@ -158,6 +144,8 @@ export class WSAuthServer extends WorkerProcess {
 				nonce: nonce,
 			};
 
+			this.onConnection(wsClient, req);
+
 			wsClient.on("message", (data: Data) => {
 				if (isBuffer(data)) {
 					const code = (<Buffer>data).readUInt8(0);
@@ -172,6 +160,10 @@ export class WSAuthServer extends WorkerProcess {
 				}
 			});
 		});
+	}
+
+	protected onConnection(wsClient: ExtendedWSClient, req: IncomingMessage): void {
+
 	}
 
 	/**
