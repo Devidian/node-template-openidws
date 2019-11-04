@@ -10,6 +10,13 @@ export interface GoogleOpenIdData {
     hd?: string
 }
 
+export interface TwitchOpenIdData {
+    sub: string,
+    email?: string,
+    picture?: string,
+    preferred_username?: string
+}
+
 export interface MicrosoftOpenIdData {
     sub: string
     email?: string
@@ -62,5 +69,6 @@ export interface OpenIdData {
     google?: GoogleOpenIdData,
     microsoft?: MicrosoftOpenIdData,
     steam?: SteamOpenIdData,
-    facebook?: FacebookOpenIdData
+    facebook?: FacebookOpenIdData,
+    twitch?: TwitchOpenIdData,
 }

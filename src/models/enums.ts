@@ -1,23 +1,22 @@
 export enum wsCodes {
-    AUTH,
-    USER,
+	AUTH,
+	USER,
 };
 
 export enum userCodes {
-    SELF,
-    OTHER,
+	SELF,
+	OTHER,
 };
 
 export enum AuthTypes {
-    LOCAL,
-    // OpenID connect provider
-    GOOGLE,
-    MICROSOFT,
-    PAYPAL,
-    SALESFORCE,
-    YAHOO,
-    PHANTAUTH,
-    // OpenID provider (non-connect)
-    FACEBOOK,
-    STEAM
+	LOCAL,
+	GOOGLE,			// OIDC
+	MICROSOFT,		// OIDC
+	PAYPAL,			// OIDC
+	SALESFORCE,		// OIDC
+	YAHOO,			// OIDC
+	PHANTAUTH,		// OIDC
+	FACEBOOK,		// fb-connect
+	STEAM,			// oid2
+	TWITCH,			// OIDC
 };

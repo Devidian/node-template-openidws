@@ -121,8 +121,11 @@ export class WSAuthServer extends WorkerProcess {
 		this.wwwApplication.post("/logout/facebook/", apiMiddleware, this.routeOpenIDFacebookLogoutCallback());
 		this.wwwApplication.post("/delete/facebook/", apiMiddleware, this.routeOpenIDFacebookDeleteCallback());
 		this.wwwApplication.get("/login/steam/", apiMiddleware, this.routeOpenIDSteamCallback());
+		// OIDC
 		this.wwwApplication.post("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		this.wwwApplication.post("/login/microsoft/", apiMiddleware, this.routeOpenIDMicrosoftCallback());
+		this.wwwApplication.get("/login/twitch/", apiMiddleware, this.routeOpenIDTwitchCallback());
+		this.wwwApplication.post("/login/twitch/", apiMiddleware, this.routeOpenIDTwitchCallback());
 	}
 
 	/**
@@ -213,6 +216,22 @@ export class WSAuthServer extends WorkerProcess {
 		} catch (error) {
 			Logger(911, "createIssuer->microsoft", error);
 		}
+
+		try {
+			const config = openIDConfig.twitch;
+			const twitchIssuer = await Issuer.discover(config.discover_url);
+			this.issuer.set("twitch", twitchIssuer);
+			const twitchClient = new twitchIssuer.Client({
+				client_id: config.client_id,
+				client_secret: config.client_secret,
+				redirect_uris: config.redirect_uris,
+				response_type: "code id_token",
+				// default_max_age: 300,
+			});
+			this.clients.set("twitch", twitchClient);
+		} catch (error) {
+			Logger(911, "createIssuer->twitch", error);
+		}
 	}
 
 	/**
@@ -253,7 +272,6 @@ export class WSAuthServer extends WorkerProcess {
 					]));
 				}
 				break;
-
 			case AuthTypes.MICROSOFT:
 				Logger(0, "handleAuthMessage", `New microsoft auth message`);
 				const mc = this.clients.get("microsoft");
@@ -275,6 +293,37 @@ export class WSAuthServer extends WorkerProcess {
 						// code_challenge,
 						// code_challenge_method: "S256",
 
+					});
+					const code = Buffer.alloc(1);
+					code.writeUInt8(wsCodes.AUTH, 0);
+					const bufContent = Buffer.from(url);
+					wsClient.send(Buffer.concat([
+						code,
+						bufContent
+					]));
+				}
+				break;
+			case AuthTypes.TWITCH:
+				Logger(0, "handleAuthMessage", `New twitch auth message`);
+				const tc = this.clients.get("twitch");
+				if (tc) {
+					const nonce = wsClient.data.nonce;
+					Logger(0, "handleAuthMessage", `Using ${nonce} for twitch authorizationUrl`);
+					const url = tc.authorizationUrl({
+						scope: ["openid"].join(" "), //
+						response_mode: 'form_post',
+						response_type: "code",
+						nonce: nonce,
+						claims: JSON.stringify({
+							"id_token": {
+								"email_verified": null
+							},
+							"userinfo": {
+								"email": null,
+								"picture": null,
+								"preferred_username": null
+							}
+						}),
 					});
 					const code = Buffer.alloc(1);
 					code.writeUInt8(wsCodes.AUTH, 0);
@@ -418,6 +467,53 @@ export class WSAuthServer extends WorkerProcess {
 				Logger(0, "routeOpenIDMicrosoftCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
+				res.status(500).end();
+			}
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @returns {RequestHandlerParams}
+	 * @memberof WSAuthServer
+	 */
+	protected routeOpenIDTwitchCallback(): RequestHandlerParams {
+		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			try {
+				const config = WSAuthServer.NodeConfig.openid.twitch;
+				const { nonce } = this.getCookies(req);
+				const mc = this.clients.get("twitch");
+				const params = mc.callbackParams(req);
+				const [redirectUri] = config.redirect_uris; // Todo: handle multiple redirect uris (is there any case=?)
+				// Logger(0, "routeOpenIDTwitchCallback", `Authorization callback ${redirectUri} uses nonce=>${nonce} and params=>`, params);
+				const tokenSet = await mc.callback(redirectUri, params, {
+					nonce: nonce,
+					// max_age: 300
+				});
+				const user = await mc.userinfo(tokenSet);
+				// console.log(tokenSet, tokenSet.claims(), user);
+
+				const U = User.createFromTwitch(user);
+
+				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+				res.status(200).send(content).end();
+
+				const code = Buffer.alloc(2);
+				code.writeUInt8(wsCodes.USER, 0);
+				code.writeUInt8(userCodes.SELF, 1);
+
+				const wsClient = this.getWsClientByNONCE(nonce);
+				wsClient.data.user = U;
+				wsClient.data.tokenSet = tokenSet;
+				wsClient.send(Buffer.concat([
+					code,
+					Buffer.from(JSON.stringify(U.exportProfile()))
+				]));
+				Logger(0, "routeOpenIDTwitchCallback", `User logged in: ${U.exportProfile().name}`);
+			} catch (error) {
+				Logger(911, "@W" + MyProcess.id, "[routeOpenIDTwitchCallback]", error);
 				res.status(500).end();
 			}
 		}

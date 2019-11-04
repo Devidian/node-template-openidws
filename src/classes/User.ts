@@ -1,5 +1,5 @@
 import { DatabaseUser } from "../models/DatabaseUser";
-import { GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, SteamOpenIdData, FacebookOpenIdData } from "../models/OpenIdData";
+import { GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, SteamOpenIdData, FacebookOpenIdData, TwitchOpenIdData } from "../models/OpenIdData";
 import uuidv4 = require("uuid/v4");
 
 export class User {
@@ -131,12 +131,38 @@ export class User {
 		return user;
 	}
 
+	/**
+	 *
+	 *
+	 * @static
+	 * @param {FacebookOpenIdData} data
+	 * @returns {User}
+	 * @memberof User
+	 */
 	public static createFromFacebook(data: FacebookOpenIdData): User {
 		const user = new User();
 		user.openId.facebook = data;
 		user.primaryName = data.profile.name;
 		// user.primaryEmail = data.email;
 		user.avatarUrl = data.profile.picture.data.url;
+
+		return user;
+	}
+
+	/**
+	 *
+	 *
+	 * @static
+	 * @param {TwitchOpenIdData} data
+	 * @returns {User}
+	 * @memberof User
+	 */
+	public static createFromTwitch(data: TwitchOpenIdData): User {
+		const user = new User();
+		user.openId.twitch = data;
+		user.primaryName = data.preferred_username;
+		user.primaryEmail = data.email;
+		user.avatarUrl = data.picture;
 
 		return user;
 	}
