@@ -72,6 +72,26 @@ export class WSAuthServer extends WorkerProcess {
 	 *
 	 *
 	 * @protected
+	 * @param {ExtendedWSClient} ws
+	 * @param {User} user
+	 * @memberof WSAuthServer
+	 */
+	protected onUserLogin(ws: ExtendedWSClient, user: User): void {
+		const responseCode = Buffer.alloc(2);
+		responseCode.writeUInt8(wsCodes.USER, 0);
+		responseCode.writeUInt8(userCodes.SELF, 1);
+
+		ws.data.user = user;
+		ws.send(Buffer.concat([
+			responseCode,
+			Buffer.from(JSON.stringify(user.exportProfile()))
+		]));
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
 	 * @memberof WSAuthServer
 	 */
 	protected createWebServer(): void {
@@ -398,17 +418,9 @@ export class WSAuthServer extends WorkerProcess {
 
 				const U = User.createFromGoogle(user);
 
-				const code = Buffer.alloc(2);
-				code.writeUInt8(wsCodes.USER, 0);
-				code.writeUInt8(userCodes.SELF, 1);
-
 				const wsClient = this.getWsClientByNONCE(nonce);
-				wsClient.data.user = U;
-				wsClient.data.tokenSet = tokenSet;
-				wsClient.send(Buffer.concat([
-					code,
-					Buffer.from(JSON.stringify(U.exportProfile()))
-				]));
+				this.onUserLogin(wsClient, U);
+
 				Logger(0, "routeOpenIDGoogleCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDGoogleCallback]", error);
@@ -445,17 +457,9 @@ export class WSAuthServer extends WorkerProcess {
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
-				const code = Buffer.alloc(2);
-				code.writeUInt8(wsCodes.USER, 0);
-				code.writeUInt8(userCodes.SELF, 1);
-
 				const wsClient = this.getWsClientByNONCE(nonce);
-				wsClient.data.user = U;
-				wsClient.data.tokenSet = tokenSet;
-				wsClient.send(Buffer.concat([
-					code,
-					Buffer.from(JSON.stringify(U.exportProfile()))
-				]));
+				this.onUserLogin(wsClient, U);
+
 				Logger(0, "routeOpenIDMicrosoftCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
@@ -492,17 +496,9 @@ export class WSAuthServer extends WorkerProcess {
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
-				const code = Buffer.alloc(2);
-				code.writeUInt8(wsCodes.USER, 0);
-				code.writeUInt8(userCodes.SELF, 1);
-
 				const wsClient = this.getWsClientByNONCE(nonce);
-				wsClient.data.user = U;
-				wsClient.data.tokenSet = tokenSet;
-				wsClient.send(Buffer.concat([
-					code,
-					Buffer.from(JSON.stringify(U.exportProfile()))
-				]));
+				this.onUserLogin(wsClient, U);
+
 				Logger(0, "routeOpenIDTwitchCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDTwitchCallback]", error);
@@ -541,17 +537,9 @@ export class WSAuthServer extends WorkerProcess {
 				res.status(200).send(content).end();
 
 
-				const code = Buffer.alloc(2);
-				code.writeUInt8(wsCodes.USER, 0);
-				code.writeUInt8(userCodes.SELF, 1);
-
 				const wsClient = this.getWsClientByNONCE(nonce);
-				wsClient.data.user = U;
-				// wsClient.data.tokenSet = tokenSet;
-				wsClient.send(Buffer.concat([
-					code,
-					Buffer.from(JSON.stringify(U.exportProfile()))
-				]));
+				this.onUserLogin(wsClient, U);
+				
 				Logger(0, "routeOpenIDMicrosoftCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
@@ -603,16 +591,8 @@ export class WSAuthServer extends WorkerProcess {
 				};
 
 				const U = User.createFromFacebook(openIdData);
-
-				const responseCode = Buffer.alloc(2);
-				responseCode.writeUInt8(wsCodes.USER, 0);
-				responseCode.writeUInt8(userCodes.SELF, 1);
-
-				wsClient.data.user = U;
-				wsClient.send(Buffer.concat([
-					responseCode,
-					Buffer.from(JSON.stringify(U.exportProfile()))
-				]));
+				this.onUserLogin(wsClient, U);
+				
 				Logger(0, "routeOpenIDFacebookCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDFacebookCallback]", error);
