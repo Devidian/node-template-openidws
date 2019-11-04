@@ -169,12 +169,8 @@ export class WSAuthServer extends WorkerProcess {
 			wsClient.on("message", (data: Data) => {
 				if (isBuffer(data)) {
 					const code = (<Buffer>data).readUInt8(0);
-					switch (code) {
-						case wsCodes.AUTH: this.handleAuthMessage(wsClient, data as Buffer); break;
-						default:
-							Logger(511, "wsClient.onMessage", `Unknown message.code: ${code}`, data, data.toString())
-					}
-
+					const payload = (<Buffer>data).slice(1);
+					this.onMessage(wsClient, code, payload);
 				} else {
 					Logger(511, basename(__filename), "wsClient.onMessage", `No Buffer data, got ${typeof data}`, data);
 				}
@@ -182,6 +178,31 @@ export class WSAuthServer extends WorkerProcess {
 		});
 	}
 
+	/**
+	 *
+	 *
+	 * @protected
+	 * @param {ExtendedWSClient} ws
+	 * @param {wsCodes} code
+	 * @param {Buffer} data
+	 * @memberof WSAuthServer
+	 */
+	protected onMessage(ws: ExtendedWSClient, code: wsCodes, data: Buffer): void {
+		switch (code) {
+			case wsCodes.AUTH: this.handleAuthMessage(ws, data as Buffer); break;
+			default:
+				Logger(511, "wsClient.onMessage", `Unknown message.code: ${code}`, data, data.toString());
+		}
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @param {ExtendedWSClient} wsClient
+	 * @param {IncomingMessage} req
+	 * @memberof WSAuthServer
+	 */
 	protected onConnection(wsClient: ExtendedWSClient, req: IncomingMessage): void {
 
 	}
@@ -539,7 +560,7 @@ export class WSAuthServer extends WorkerProcess {
 
 				const wsClient = this.getWsClientByNONCE(nonce);
 				this.onUserLogin(wsClient, U);
-				
+
 				Logger(0, "routeOpenIDMicrosoftCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDMicrosoftCallback]", error);
@@ -592,7 +613,7 @@ export class WSAuthServer extends WorkerProcess {
 
 				const U = User.createFromFacebook(openIdData);
 				this.onUserLogin(wsClient, U);
-				
+
 				Logger(0, "routeOpenIDFacebookCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDFacebookCallback]", error);
