@@ -80,7 +80,7 @@ export class WSAuthServer extends WorkerProcess {
 		const responseCode = Buffer.alloc(2);
 		responseCode.writeUInt8(wsCodes.USER, 0);
 		responseCode.writeUInt8(userCodes.SELF, 1);
-
+		user.isGuest = false;
 		ws.data.user = user;
 		ws.send(Buffer.concat([
 			responseCode,
@@ -216,54 +216,61 @@ export class WSAuthServer extends WorkerProcess {
 	 */
 	protected async createIssuer(): Promise<void> {
 		const openIDConfig = WSAuthServer.NodeConfig.openid;
-		try {
-			const config = openIDConfig.google;
-			const googleIssuer = await Issuer.discover(config.discover_url);
-			this.issuer.set("google", googleIssuer);
-			const googleClient = new googleIssuer.Client({
-				client_id: config.client_id,
-				client_secret: config.client_secret,
-				redirect_uris: config.redirect_uris,
-				response_type: "code id_token", //s: ["code", "id_token"],
-				// default_max_age: 300,
-			});
+		// Google
+		if (openIDConfig.google.client_id) {
+			try {
+				const config = openIDConfig.google;
+				const googleIssuer = await Issuer.discover(config.discover_url);
+				this.issuer.set("google", googleIssuer);
+				const googleClient = new googleIssuer.Client({
+					client_id: config.client_id,
+					client_secret: config.client_secret,
+					redirect_uris: config.redirect_uris,
+					response_type: "code id_token", //s: ["code", "id_token"],
+					// default_max_age: 300,
+				});
 
-			this.clients.set("google", googleClient);
+				this.clients.set("google", googleClient);
 
-		} catch (error) {
-			Logger(911, "createIssuer->google", error);
+			} catch (error) {
+				Logger(911, "createIssuer->google", error);
+			}
 		}
-
-		try {
-			const config = openIDConfig.microsoft;
-			const microsoftIssuer = await Issuer.discover(config.discover_url);
-			this.issuer.set("microsoft", microsoftIssuer);
-			const microsoftClient = new microsoftIssuer.Client({
-				client_id: config.client_id,
-				client_secret: config.client_secret,
-				redirect_uris: config.redirect_uris,
-				response_type: "code id_token",
-				// default_max_age: 300,
-			});
-			this.clients.set("microsoft", microsoftClient);
-		} catch (error) {
-			Logger(911, "createIssuer->microsoft", error);
+		// Microsoft
+		if (openIDConfig.microsoft.client_id) {
+			try {
+				const config = openIDConfig.microsoft;
+				const microsoftIssuer = await Issuer.discover(config.discover_url);
+				this.issuer.set("microsoft", microsoftIssuer);
+				const microsoftClient = new microsoftIssuer.Client({
+					client_id: config.client_id,
+					client_secret: config.client_secret,
+					redirect_uris: config.redirect_uris,
+					response_type: "code id_token",
+					// default_max_age: 300,
+				});
+				this.clients.set("microsoft", microsoftClient);
+			} catch (error) {
+				Logger(911, "createIssuer->microsoft", error);
+			}
 		}
-
-		try {
-			const config = openIDConfig.twitch;
-			const twitchIssuer = await Issuer.discover(config.discover_url);
-			this.issuer.set("twitch", twitchIssuer);
-			const twitchClient = new twitchIssuer.Client({
-				client_id: config.client_id,
-				client_secret: config.client_secret,
-				redirect_uris: config.redirect_uris,
-				response_type: "code id_token",
-				// default_max_age: 300,
-			});
-			this.clients.set("twitch", twitchClient);
-		} catch (error) {
-			Logger(911, "createIssuer->twitch", error);
+		// Twitch
+		if (openIDConfig.twitch.client_id) {
+			try {
+				const config = openIDConfig.twitch;
+				const twitchIssuer = await Issuer.discover(config.discover_url);
+				this.issuer.set("twitch", twitchIssuer);
+				const twitchClient = new twitchIssuer.Client({
+					client_id: config.client_id,
+					client_secret: config.client_secret,
+					redirect_uris: config.redirect_uris,
+					response_type: "code id_token",
+					// default_max_age: 300,
+				});
+				this.clients.set("twitch", twitchClient);
+			} catch (error) {
+				Logger(911, "createIssuer->twitch", error);
+			}
 		}
 	}
 
@@ -276,7 +283,11 @@ export class WSAuthServer extends WorkerProcess {
 	 * @memberof WSAuthServer
 	 */
 	protected handleAuthMessage(wsClient: ExtendedWSClient, data: Buffer) {
-		const type = (<Buffer>data).readUInt8(1);
+		if (data.length < 1) {
+			Logger(911, "", `no data received <${data}>`);
+			return;
+		}
+		const type = (<Buffer>data).readUInt8(0);
 		switch (type) {
 			case AuthTypes.GOOGLE:
 				Logger(0, "handleAuthMessage", `New google auth message`);
@@ -762,6 +773,22 @@ export class WSAuthServer extends WorkerProcess {
 			Logger(511, "getWsClientByNONCE", `Multiple websocket clients found with nonce=>${nonce}`);
 		}
 		return client1;
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @param {string} id
+	 * @returns {ExtendedWSClient[]}
+	 * @memberof WSAuthServer
+	 */
+	protected getWSClientsByUserId(id: string): ExtendedWSClient[] {
+		const clients = Array.from<ExtendedWSClient>(this.wsServer.clients.values() as IterableIterator<ExtendedWSClient>).filter((v: ExtendedWSClient) => v.data.user && v.data.user.id === id);
+		if (clients.length > 0) {
+			Logger(511, "getWSClientByUserId", `Multiple websocket clients found with userId=>${id}`);
+		}
+		return clients;
 	}
 
 	/**

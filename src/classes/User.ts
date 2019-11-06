@@ -10,6 +10,13 @@ export class User {
 	protected avatarUrl: string = "";
 	protected primaryEmail: string = "";
 
+
+	public isGuest = true;
+
+	public get id(): string {
+		return this._id;
+	}
+
     /**
      * Creates an instance of User.
      * @memberof User
@@ -27,7 +34,8 @@ export class User {
 		return {
 			id: this._id,
 			name: this.primaryName,
-			avatar: this.avatarUrl
+			avatar: this.avatarUrl,
+			isGuest: this.isGuest
 		}
 	}
 
