@@ -1,11 +1,11 @@
 'use strict';
+import { app, cfg, configType, NodeConfig, ocfg, rootDir } from '@/config';
+import { Logger } from '@/lib/tools/Logger';
 import { fork as forkChild, setupMaster, Worker as clusterWorker } from 'cluster';
 import { existsSync, watch as watchFS } from 'fs';
 import { basename, resolve } from 'path';
 import { BehaviorSubject } from 'rxjs';
 import { Server } from "ws";
-import { app, cfg, configType, NodeConfig, ocfg, rootDir } from '../config';
-import { Logger } from '../lib/tools/Logger';
 
 /**
  *

@@ -1,10 +1,11 @@
 'use strict';
+import 'module-alias/register';
 import { execSync, ExecSyncOptionsWithStringEncoding } from 'child_process';
 import { accessSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { EOL } from 'os';
 import { resolve } from 'path';
-import { cfg, configType, rootDir } from './config';
-import { Logger } from './lib/tools/Logger';
+import { cfg, configType, rootDir } from '@/config';
+import { Logger } from '@/lib/tools/Logger';
 
 // Set process title
 process.title = "Application initialisation";

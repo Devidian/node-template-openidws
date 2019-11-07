@@ -1,13 +1,22 @@
-import { NodeConfig } from "../config";
-import { WSAuthServer } from "./WSAuthServer";
+import { NodeConfig } from "@/config";
+import { WSAuthServer } from "./abstracts/WSAuthServer";
+import { LiveStorage } from "./LiveStorage";
 
-export class MyClass extends WSAuthServer {
+export class MyClass extends WSAuthServer<LiveStorage> {
 	protected static highlander: MyClass = null;
 
 	public static get NodeConfig(): NodeConfig {
 		return WSAuthServer.NodeConfig;
 	};
 
+	/**
+	 *
+	 *
+	 * @static
+	 * @param {NodeConfig} [nc]
+	 * @returns {MyClass}
+	 * @memberof MyClass
+	 */
 	public static getInstance(nc?: NodeConfig): MyClass {
 		WSAuthServer._NodeConfig = nc ? nc : WSAuthServer.NodeConfig;
 		if (!MyClass.highlander) {
@@ -17,11 +26,11 @@ export class MyClass extends WSAuthServer {
 	}
 
 	/**
-	 *Creates an instance of MyClass.
+	 * Creates an instance of MyClass.
 	 * @memberof MyClass
 	 */
 	constructor() {
-		super();
+		super(new LiveStorage());
 	}
 
 	/**
@@ -31,7 +40,7 @@ export class MyClass extends WSAuthServer {
 	 * @memberof MyClass
 	 */
 	protected run(): void {
-		// inser code here
+		// insert code here
 
 		// run super to refresh timer
 		super.run();

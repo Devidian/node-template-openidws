@@ -1,8 +1,10 @@
-import { WorkerProcess } from './classes/WorkerProcess';
-import { BaseConfig, cfg, NodeConfig, ocfg, processNodeId, processType } from './config';
-import { Logger } from './lib/tools/Logger';
+'use strict';
+import 'module-alias/register';
 import { basename } from 'path';
-import { MyClass } from './classes/MyClass';
+import { WorkerProcess } from '@/classes/abstracts/WorkerProcess';
+import { MyClass } from '@/classes/MyClass';
+import { BaseConfig, cfg, NodeConfig, ocfg, processNodeId, processType } from '@/config';
+import { Logger } from '@/lib/tools/Logger';
 
 const Config: NodeConfig = cfg.nodes[processType][processNodeId];
 process.env.unit = processNodeId;

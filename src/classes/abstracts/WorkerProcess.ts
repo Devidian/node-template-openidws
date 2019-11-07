@@ -1,6 +1,6 @@
 'use strict';
 import { worker as MyProcess } from "cluster";
-import { cfg, NodeConfig } from "../config";
+import { cfg, NodeConfig } from "../../config";
 
 /**
  *

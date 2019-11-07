@@ -1,4 +1,4 @@
-import { User } from "../classes/User";
+import { User } from "@/classes/User";
 import WebSocket = require("ws");
 /**
  *
@@ -6,9 +6,9 @@ import WebSocket = require("ws");
  * @interface ExtendedWSClient
  * @extends {WebSocket}
  */
-export interface ExtendedWSClient extends WebSocket {
+export interface ExtendedWSClient<UC extends User>  extends WebSocket {
 	data: {
-		user: User;
+		user: UC;
 		[key: string]: any;
 	};
 	upgradeReq: any;

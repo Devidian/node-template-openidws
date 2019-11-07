@@ -1,3 +1,5 @@
+'use strict';
+import 'module-alias/register';
 import { cfg, appArguments } from './config';
 import WebSocket, {  } from "ws";
 import { Logger } from './lib/tools/Logger';

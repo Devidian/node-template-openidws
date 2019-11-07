@@ -1,3 +1,4 @@
+'use strict';
 import { worker as MyProcess } from "cluster";
 import { createHmac } from "crypto";
 import { Application } from "express";
@@ -7,20 +8,17 @@ import { IncomingMessage, Server } from "http";
 import { Client, generators, Issuer } from "openid-client";
 import { basename, resolve } from "path";
 import { get as getPromise } from "request-promise-native";
-import { FacebookSignedPayload } from "src/models/FacebookSignedPayload";
-import { FacebookOpenIdData, GoogleOpenIdData } from "src/models/OpenIdData";
 import { isBuffer } from "util";
 import { Data, Server as wss } from "ws";
-import { cfg, NodeConfig, rootDir } from "../config";
-import { Logger } from "../lib/tools/Logger";
-import { AuthTypes, userCodes, wsCodes } from "../models/enums";
-import { User } from "./User";
+import { NodeConfig, rootDir } from "@/config";
+import { Logger } from "@/lib/tools/Logger";
+import { AuthTypes, ExtendedWSClient, FacebookOpenIdData, FacebookOpenIdProfile, FacebookSignedPayload, GoogleOpenIdData, OpenIdServiceIndex, StorageInterface, userCodes, wsCodes } from "@/models";
+import { User } from "../User";
 import { WorkerProcess } from "./WorkerProcess";
 import express = require("express");
 import favicon = require("serve-favicon");
 import querystring = require("querystring");
 import uuidv4 = require("uuid/v4");
-import { ExtendedWSClient } from "../models/ExtendedWSClient";
 
 /**
  *
@@ -29,7 +27,7 @@ import { ExtendedWSClient } from "../models/ExtendedWSClient";
  * @class WSAuthServer
  * @extends {WorkerProcess}
  */
-export class WSAuthServer extends WorkerProcess {
+export abstract class WSAuthServer<T extends StorageInterface<any>> extends WorkerProcess {
 	// protected static _NodeConfig: NodeConfig = null;
 	protected static highlander = null;
 
@@ -37,15 +35,20 @@ export class WSAuthServer extends WorkerProcess {
 		return WSAuthServer._NodeConfig;
 	};
 
-	public static getInstance(nc?: NodeConfig): WSAuthServer {
-		WSAuthServer._NodeConfig = nc ? nc : WSAuthServer.NodeConfig;
-		if (!WSAuthServer.highlander) {
-			WSAuthServer.highlander = new WSAuthServer();
-		}
-		return WSAuthServer.highlander;
-	}
+	// public static getInstance<S extends StorageInterface<any,any>>(nc?: NodeConfig, s: S = null): WSAuthServer<S> {
+	// 	WSAuthServer._NodeConfig = nc ? nc : WSAuthServer.NodeConfig;
+	// 	if (!WSAuthServer.highlander) {
+	// 		WSAuthServer.highlander = new WSAuthServer<S>(s);
+	// 	}
+	// 	return WSAuthServer.highlander;
+	// }
 
-	// protected timer: NodeJS.Timer = null;
+	protected get Storage(): T {
+		if (!this._storage) {
+			this._storage = null;
+		}
+		return this._storage;
+	}
 
 	// Web and WebSocket Server
 	protected wsServer: wss = null;					// WebSocket Server
@@ -60,7 +63,7 @@ export class WSAuthServer extends WorkerProcess {
 	 * Creates an instance of WSAuthServer.
 	 * @memberof WSAuthServer
 	 */
-	constructor() {
+	protected constructor(protected _storage: T) {
 		super();
 		this.createWebServer();
 		this.createWebsocketServer();
@@ -76,12 +79,19 @@ export class WSAuthServer extends WorkerProcess {
 	 * @param {User} user
 	 * @memberof WSAuthServer
 	 */
-	protected onUserLogin(ws: ExtendedWSClient, user: User): void {
+	protected onUserLogin(ws: ExtendedWSClient<User>, user: User): void {
 		const responseCode = Buffer.alloc(2);
 		responseCode.writeUInt8(wsCodes.USER, 0);
 		responseCode.writeUInt8(userCodes.SELF, 1);
 		user.isGuest = false;
-		ws.data.user = user;
+		if (!ws.data) {
+			ws.data = {
+				user: user
+			};
+		} else {
+			ws.data.user = user;
+		}
+		this.Storage.saveUser(user);
 		ws.send(Buffer.concat([
 			responseCode,
 			Buffer.from(JSON.stringify(user.exportProfile()))
@@ -149,7 +159,7 @@ export class WSAuthServer extends WorkerProcess {
 			headers.push(`Set-Cookie: NONCE=${nonce || generators.nonce()}; Max-Age=${60 * 60 * 4}; Domain=${WSAuthServer.NodeConfig.ws.cookieDomain}; secure`);
 		});
 
-		this.wsServer.on("connection", (wsClient: ExtendedWSClient, req: IncomingMessage) => {
+		this.wsServer.on("connection", (wsClient: ExtendedWSClient<User>, req: IncomingMessage) => {
 			const [ip] = req.headers['x-forwarded-for'] ? (req.headers['x-forwarded-for'] as string).split(/\s*,\s*/) : [req.connection.remoteAddress];
 			Logger(0, "wsClient.onConnect", `new Connection from <${ip}> via <${req.connection.remoteAddress}>`);
 
@@ -187,7 +197,7 @@ export class WSAuthServer extends WorkerProcess {
 	 * @param {Buffer} data
 	 * @memberof WSAuthServer
 	 */
-	protected onMessage(ws: ExtendedWSClient, code: wsCodes, data: Buffer): void {
+	protected onMessage(ws: ExtendedWSClient<User>, code: wsCodes, data: Buffer): void {
 		switch (code) {
 			case wsCodes.AUTH: this.handleAuthMessage(ws, data as Buffer); break;
 			default:
@@ -203,7 +213,7 @@ export class WSAuthServer extends WorkerProcess {
 	 * @param {IncomingMessage} req
 	 * @memberof WSAuthServer
 	 */
-	protected onConnection(wsClient: ExtendedWSClient, req: IncomingMessage): void {
+	protected onConnection(wsClient: ExtendedWSClient<User>, req: IncomingMessage): void {
 
 	}
 
@@ -282,7 +292,7 @@ export class WSAuthServer extends WorkerProcess {
 	 * @param {Buffer} data
 	 * @memberof WSAuthServer
 	 */
-	protected handleAuthMessage(wsClient: ExtendedWSClient, data: Buffer) {
+	protected handleAuthMessage(wsClient: ExtendedWSClient<User>, data: Buffer) {
 		if (data.length < 1) {
 			Logger(911, "", `no data received <${data}>`);
 			return;
@@ -448,7 +458,8 @@ export class WSAuthServer extends WorkerProcess {
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
-				const U = User.createFromGoogle(user);
+
+				const U = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.GOOGLE) || User.createFromGoogle(user);
 
 				const wsClient = this.getWsClientByNONCE(nonce);
 				this.onUserLogin(wsClient, U);
@@ -482,9 +493,8 @@ export class WSAuthServer extends WorkerProcess {
 					// max_age: 300
 				});
 				const user = await mc.userinfo(tokenSet);
-				// console.log(tokenSet, tokenSet.claims(), user);
 
-				const U = User.createFromMicrosoft(user);
+				const U = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.MICROSOFT) || User.createFromMicrosoft(user);
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
@@ -521,14 +531,20 @@ export class WSAuthServer extends WorkerProcess {
 					// max_age: 300
 				});
 				const user = await mc.userinfo(tokenSet);
-				// console.log(tokenSet, tokenSet.claims(), user);
 
-				const U = User.createFromTwitch(user);
+				const userFromDB = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.TWITCH);
+				const createdUser = User.createFromTwitch(user);
+
+				Logger(0, "routeOpenIDTwitchCallback", `userFromDB: ${userFromDB}\ncreatedUser${createdUser}`);
+				const U = userFromDB || createdUser;
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
 				const wsClient = this.getWsClientByNONCE(nonce);
+				if (!wsClient) {
+					throw `no wsClient found for nonce=>${nonce}`
+				}
 				this.onUserLogin(wsClient, U);
 
 				Logger(0, "routeOpenIDTwitchCallback", `User logged in: ${U.exportProfile().name}`);
@@ -563,7 +579,7 @@ export class WSAuthServer extends WorkerProcess {
 				// Logger(0, "routeOpenIDSteamCallback", steamId64, profile.response.players);
 				const [user] = profile.response.players;
 
-				const U = User.createFromSteam(user);
+				const U = this.Storage.fetchUserByOpenId(user.steamid, OpenIdServiceIndex.STEAM) || User.createFromSteam(user);
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
@@ -594,7 +610,6 @@ export class WSAuthServer extends WorkerProcess {
 				const { nonce } = this.getCookies(req);
 				const wsClient = this.getWsClientByNONCE(nonce);
 
-				// console.log("routeOpenIDFacebookLoginCallback", req.query, req.body, req.params);
 
 				const { code, state } = req.query;
 
@@ -610,19 +625,19 @@ export class WSAuthServer extends WorkerProcess {
 
 				const { access_token, token_type, expires_in } = JSON.parse(accessKeyRaw);
 
-				// console.log(access_token, token_type, expires_in);
 
-				const profileRaw = await getPromise(`https://graph.facebook.com/v5.0/me?fields=id%2Cname%2Cpicture&access_token=${access_token}`);
+				const profileRaw: FacebookOpenIdProfile = JSON.parse(await getPromise(`https://graph.facebook.com/v5.0/me?fields=id%2Cname%2Cpicture&access_token=${access_token}`));
 
 				// const { id, name, picture } = JSON.parse(profileRaw);
 				const openIdData: FacebookOpenIdData = {
+					sub: profileRaw.id,
 					access_token,
 					token_type,
 					expires_in,
-					profile: JSON.parse(profileRaw),
+					profile: profileRaw,
 				};
 
-				const U = User.createFromFacebook(openIdData);
+				const U = this.Storage.fetchUserByOpenId(openIdData.sub, OpenIdServiceIndex.FACEBOOK) || User.createFromFacebook(openIdData);
 				this.onUserLogin(wsClient, U);
 
 				Logger(0, "routeOpenIDFacebookCallback", `User logged in: ${U.exportProfile().name}`);
@@ -671,7 +686,6 @@ export class WSAuthServer extends WorkerProcess {
 	protected routeOpenIDFacebookLogoutCallback(): RequestHandlerParams {
 		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 			try {
-				// console.log("routeOpenIDFacebookLogoutCallback", req.query, req.body, req.params);
 				const { signed_request } = req.body;
 				const data = this.decodeFacebookSignedRequest(signed_request);
 
@@ -696,7 +710,6 @@ export class WSAuthServer extends WorkerProcess {
 	protected routeOpenIDFacebookDeleteCallback(): RequestHandlerParams {
 		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
 			try {
-				// console.log("routeOpenIDFacebookDeleteCallback", req.query, req.body, req.params);
 				const { signed_request } = req.body;
 				const data = this.decodeFacebookSignedRequest(signed_request);
 
@@ -767,10 +780,10 @@ export class WSAuthServer extends WorkerProcess {
 	 * @returns {ExtendedWSClient}
 	 * @memberof WSAuthServer
 	 */
-	protected getWsClientByNONCE(nonce: string): ExtendedWSClient {
-		const [client1, ...other] = Array.from<ExtendedWSClient>(this.wsServer.clients.values() as IterableIterator<ExtendedWSClient>).filter((v: ExtendedWSClient) => v.data.nonce === nonce);
+	protected getWsClientByNONCE(nonce: string): ExtendedWSClient<User> {
+		const [client1, ...other] = Array.from<ExtendedWSClient<User>>(this.wsServer.clients.values() as IterableIterator<ExtendedWSClient<User>>).filter((v: ExtendedWSClient<User>) => v.OPEN && v.data.nonce === nonce);
 		if (other.length > 0) {
-			Logger(511, "getWsClientByNONCE", `Multiple websocket clients found with nonce=>${nonce}`);
+			Logger(511, "getWsClientByNONCE", `Multiple websocket clients(+${other.length}) found with nonce=>${nonce}`);
 		}
 		return client1;
 	}
@@ -783,10 +796,10 @@ export class WSAuthServer extends WorkerProcess {
 	 * @returns {ExtendedWSClient[]}
 	 * @memberof WSAuthServer
 	 */
-	protected getWSClientsByUserId(id: string): ExtendedWSClient[] {
-		const clients = Array.from<ExtendedWSClient>(this.wsServer.clients.values() as IterableIterator<ExtendedWSClient>).filter((v: ExtendedWSClient) => v.data.user && v.data.user.id === id);
+	protected getWSClientsByUserId(id: string): ExtendedWSClient<User>[] {
+		const clients = Array.from<ExtendedWSClient<User>>(this.wsServer.clients.values() as IterableIterator<ExtendedWSClient<User>>).filter((v: ExtendedWSClient<User>) => v.OPEN && v.data.user && v.data.user.id === id);
 		if (clients.length > 0) {
-			Logger(511, "getWSClientByUserId", `Multiple websocket clients found with userId=>${id}`);
+			Logger(111, "getWSClientByUserId", `Multiple websocket clients(${clients.length}) found with userId=>${id}`);
 		}
 		return clients;
 	}

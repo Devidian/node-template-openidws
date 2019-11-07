@@ -1,6 +1,5 @@
-import { DatabaseUser } from "../models/DatabaseUser";
-import { GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, SteamOpenIdData, FacebookOpenIdData, TwitchOpenIdData } from "../models/OpenIdData";
 import uuidv4 = require("uuid/v4");
+import { DatabaseUser, FacebookOpenIdData, GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, SteamOpenIdData, TwitchOpenIdData } from "@/models";
 
 export class User {
 	protected _id: string = "_new_";
@@ -15,6 +14,10 @@ export class User {
 
 	public get id(): string {
 		return this._id;
+	}
+
+	public get oid(): OpenIdData {
+		return this.openId;
 	}
 
     /**
@@ -50,19 +53,33 @@ export class User {
 			return {
 				_id: this._id,
 				openId: {
-					google: { sub: this.openId.google.sub },
-					microsoft: { sub: this.openId.microsoft.sub },
-					steam: { steamid: this.openId.steam.steamid },
+					google: {
+						sub: this.openId.google ? this.openId.google.sub : null
+					},
+					microsoft: {
+						sub: this.openId.microsoft ? this.openId.microsoft.sub : null
+					},
+					steam: {
+						sub: this.openId.steam ? this.openId.steam.sub : null
+					},
+					twitch: {
+						sub: this.openId.twitch ? this.openId.twitch.sub : null
+					},
+					// facebook: {
+					// 	sub: this.openId.facebook ? this.openId.facebook.sub : null
+					// },
 				},
 				name: this.primaryName,
-				avatar: this.avatarUrl
+				avatar: this.avatarUrl,
+				email: this.primaryEmail
 			}
 		} else {
 			return {
 				_id: this._id,
 				openId: this.openId,
 				name: this.primaryName,
-				avatar: this.avatarUrl
+				avatar: this.avatarUrl,
+				email: this.primaryEmail
 			}
 		}
 	}
@@ -81,6 +98,7 @@ export class User {
 		user.primaryName = data.name;
 		user.avatarUrl = data.avatar;
 		user.openId = data.openId;
+		user.primaryEmail = data.email;
 
 		return user;
 	}
@@ -131,6 +149,7 @@ export class User {
 	 */
 	public static createFromSteam(data: SteamOpenIdData): User {
 		const user = new User();
+		data.sub = data ? data.sub : data.steamid;
 		user.openId.steam = data;
 		user.primaryName = data.personaname;
 		// user.primaryEmail = data.email;

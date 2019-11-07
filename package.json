@@ -8,6 +8,7 @@
 	"private": true,
 	"dependencies": {
 		"express": "^4.17.1",
+		"module-alias": "^2.2.2",
 		"openid-client": "^3.7.3",
 		"request": "^2.88.0",
 		"request-promise-native": "^1.0.7",
@@ -23,5 +24,8 @@
 		"@types/request-promise-native": "^1.0.17",
 		"@types/serve-favicon": "^2.2.31",
 		"@types/ws": "^6.0.3"
+	},
+	"_moduleAliases": {
+		"@": "bin"
 	}
 }
