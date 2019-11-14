@@ -8,6 +8,7 @@ export interface NodeConfig {
 	tick: number,                   // run loop timeout
 	www: {
 		port: number,
+		localLoginUri: string,
 	},
 	ws: {
 		port: number,

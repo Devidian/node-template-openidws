@@ -27,7 +27,8 @@
                 "enabled": false,
                 "tick": 250,
                 "www": {
-                    "port": 13390
+                    "port": 13390,
+                    "localLoginUri": ""
                 },
                 "ws": {
                     "port": 13380,

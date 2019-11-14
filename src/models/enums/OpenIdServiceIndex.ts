@@ -8,4 +8,5 @@ export enum OpenIdServiceIndex {
     PHANTAUTH = 'phantauth',
     FACEBOOK = 'facebook',
     STEAM = 'steam',
+    LOCAL = 'local',
 }

@@ -10,6 +10,7 @@ export interface ExtendedWSClient<UC extends User>  extends WebSocket {
 	data: {
 		user: UC;
 		[key: string]: any;
+		id: string;
 	};
 	upgradeReq: any;
 }

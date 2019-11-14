@@ -10,4 +10,5 @@ export * from "./OpenIdData";
 export * from "./SteamOpenIdData";
 export * from "./StorageInterface";
 export * from "./TwitchOpenIdData";
+export * from "./UserDevice";
 export * from "./WebSocketObjectInterface";

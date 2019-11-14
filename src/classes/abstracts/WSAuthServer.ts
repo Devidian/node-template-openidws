@@ -83,10 +83,11 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 		const responseCode = Buffer.alloc(2);
 		responseCode.writeUInt8(wsCodes.USER, 0);
 		responseCode.writeUInt8(userCodes.SELF, 1);
-		user.isGuest = false;
+		user.isOnline = true;
 		if (!ws.data) {
 			ws.data = {
-				user: user
+				user: user,
+				id: uuidv4()
 			};
 		} else {
 			ws.data.user = user;
@@ -96,6 +97,8 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 			responseCode,
 			Buffer.from(JSON.stringify(user.exportProfile()))
 		]));
+
+		this.boadcastUser(user);
 	}
 
 	/**
@@ -142,6 +145,9 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 		this.wwwApplication.post("/login/microsoft/", apiMiddleware, this.routeOpenIDMicrosoftCallback());
 		this.wwwApplication.get("/login/twitch/", apiMiddleware, this.routeOpenIDTwitchCallback());
 		this.wwwApplication.post("/login/twitch/", apiMiddleware, this.routeOpenIDTwitchCallback());
+
+		// Local stuff
+		this.wwwApplication.get("/login/local/", apiMiddleware, this.routeLoginLocal());
 	}
 
 	/**
@@ -154,25 +160,42 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 		this.wsServer = new wss({ port: WSAuthServer.NodeConfig.ws.port, host: WSAuthServer.NodeConfig.ws.host });
 
 		this.wsServer.on("headers", (headers, req: IncomingMessage) => {
-			const { nonce } = this.getCookies(req);
+			const { nonce, access_token } = this.getCookies(req);
+			const [ip] = req.headers['x-forwarded-for'] ? (req.headers['x-forwarded-for'] as string).split(/\s*,\s*/) : [req.connection.remoteAddress];
+			Logger(0, "wsClient.onHeaders", `new headers request from <${ip}> via <${req.connection.remoteAddress}>`);
+			// TODO: refresh accessToken
+			Logger(0, "wsClient.onHeaders", `access_token ${access_token ? '' : 'not'} found`);
 
 			headers.push(`Set-Cookie: NONCE=${nonce || generators.nonce()}; Max-Age=${60 * 60 * 4}; Domain=${WSAuthServer.NodeConfig.ws.cookieDomain}; secure`);
 		});
 
 		this.wsServer.on("connection", (wsClient: ExtendedWSClient<User>, req: IncomingMessage) => {
 			const [ip] = req.headers['x-forwarded-for'] ? (req.headers['x-forwarded-for'] as string).split(/\s*,\s*/) : [req.connection.remoteAddress];
-			Logger(0, "wsClient.onConnect", `new Connection from <${ip}> via <${req.connection.remoteAddress}>`);
+			Logger(0, "wsClient.onConnection", `new Connection from <${ip}> via <${req.connection.remoteAddress}>`);
 
 
-			const { nonce } = this.getCookies(req);
+			const { nonce, access_token } = this.getCookies(req);
 
-			//TODO: why is nonce not set? find a better solution as force reconnect
-			if (!nonce) { wsClient.close(); return; }
-
+			// TODO: why is nonce not set? find a better solution as force reconnect
+			if (!nonce) {
+				Logger(0, "wsClient.onConnection", `nonce not set, closing connection`, nonce, access_token);
+				wsClient.close();
+				return;
+			}
 			wsClient.data = {
 				user: null,
 				nonce: nonce,
+				id: uuidv4(), // create a connection id for this connection session
 			};
+			if (access_token) {
+				const user = this.Storage.fetchUserByAccessToken(access_token);
+				if (user) {
+					Logger(0, "wsClient.onConnection", `access_token set and user found ${user.id}`);
+					this.onUserLogin(wsClient, user);
+				} else {
+					Logger(0, "wsClient.onConnection", `access_token set but no user found ${access_token}`);
+				}
+			}
 
 			this.onConnection(wsClient, req);
 
@@ -185,6 +208,43 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 					Logger(511, basename(__filename), "wsClient.onMessage", `No Buffer data, got ${typeof data}`, data);
 				}
 			});
+
+			wsClient.on("close", (code, reason) => {
+				this.onConnectionClose(wsClient, code, reason);
+			});
+		});
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @param {ExtendedWSClient<User>} ws
+	 * @param {number} code
+	 * @param {string} reason
+	 * @memberof WSAuthServer
+	 */
+	protected onConnectionClose(ws: ExtendedWSClient<User>, code: number, reason: string): void {
+		const user = ws.data.user;
+		if (!user) {
+			return;
+		}
+		const responseCode = Buffer.alloc(2);
+		responseCode.writeUInt8(wsCodes.USER, 0);
+		responseCode.writeUInt8(userCodes.OTHER, 1);
+		user.isOnline = false;
+		const userMessage = Buffer.concat([
+			responseCode,
+			Buffer.from(JSON.stringify(user.exportProfile())),
+			// chatUser.exportToBuffer()
+		]);
+
+		this.wsServer.clients.forEach((C: ExtendedWSClient<User>) => {
+			if (!C.OPEN || C.data.id === ws.data.id) {
+				return;
+			}
+			// Send this user as 'other' user to every client
+			C.send(userMessage);
 		});
 	}
 
@@ -209,11 +269,49 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 *
 	 *
 	 * @protected
-	 * @param {ExtendedWSClient} wsClient
+	 * @param {ExtendedWSClient} ws
 	 * @param {IncomingMessage} req
 	 * @memberof WSAuthServer
 	 */
-	protected onConnection(wsClient: ExtendedWSClient<User>, req: IncomingMessage): void {
+	protected onConnection(ws: ExtendedWSClient<User>, req: IncomingMessage): void {
+
+		if (!ws.data.user) {
+			const code = Buffer.alloc(1);
+			code.writeUInt8(wsCodes.AUTH, 0);
+			const bufContent = Buffer.from(WSAuthServer.NodeConfig.www.localLoginUri);
+
+			ws.send(Buffer.concat([
+				code,
+				bufContent
+			]));
+		} else {
+
+		}
+
+		const responseCode = Buffer.alloc(2);
+		responseCode.writeUInt8(wsCodes.USER, 0);
+		responseCode.writeUInt8(userCodes.OTHER, 1);
+
+		// Send all active users to this client
+		this.wsServer.clients.forEach((C: ExtendedWSClient<User>) => {
+			if (!C.OPEN || C.data.id === ws.data.id || !C.data.user) {
+				return;
+			}
+			if (ws.data.user) {
+				const userMessage = Buffer.concat([
+					responseCode,
+					Buffer.from(JSON.stringify(ws.data.user.exportProfile())),
+					// chatUser.exportToBuffer()
+				]);
+				C.send(userMessage);
+			}
+			const userMessage = Buffer.concat([
+				responseCode,
+				Buffer.from(JSON.stringify(C.data.user.exportProfile())),
+				// chatUser.exportToBuffer()
+			]);
+			ws.send(userMessage);
+		});
 
 	}
 
@@ -226,8 +324,11 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 */
 	protected async createIssuer(): Promise<void> {
 		const openIDConfig = WSAuthServer.NodeConfig.openid;
+		if(!openIDConfig){
+			return;
+		}
 		// Google
-		if (openIDConfig.google.client_id) {
+		if (openIDConfig.google && openIDConfig.google.client_id) {
 			try {
 				const config = openIDConfig.google;
 				const googleIssuer = await Issuer.discover(config.discover_url);
@@ -247,7 +348,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 			}
 		}
 		// Microsoft
-		if (openIDConfig.microsoft.client_id) {
+		if (openIDConfig.microsoft && openIDConfig.microsoft.client_id) {
 			try {
 				const config = openIDConfig.microsoft;
 				const microsoftIssuer = await Issuer.discover(config.discover_url);
@@ -265,7 +366,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 			}
 		}
 		// Twitch
-		if (openIDConfig.twitch.client_id) {
+		if (openIDConfig.twitch && openIDConfig.twitch.client_id) {
 			try {
 				const config = openIDConfig.twitch;
 				const twitchIssuer = await Issuer.discover(config.discover_url);
@@ -294,11 +395,39 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 */
 	protected handleAuthMessage(wsClient: ExtendedWSClient<User>, data: Buffer) {
 		if (data.length < 1) {
-			Logger(911, "", `no data received <${data}>`);
+			Logger(911, "handleAuthMessage", `no data received <${data}>`);
 			return;
 		}
 		const type = (<Buffer>data).readUInt8(0);
 		switch (type) {
+			case AuthTypes.LOGOUT:
+				{
+					const user = wsClient.data.user;
+					user.isOnline = false;
+					this.boadcastUser(user);
+					wsClient.data.user = null;
+
+					// force logout sending self user null
+					const responseCode = Buffer.alloc(2);
+					responseCode.writeUInt8(wsCodes.USER, 0);
+					responseCode.writeUInt8(userCodes.SELF, 1);
+
+					wsClient.send(Buffer.concat([
+						responseCode,
+						Buffer.from(JSON.stringify(null))
+					]));
+
+					// send guest login url
+					const code = Buffer.alloc(1);
+					code.writeUInt8(wsCodes.AUTH, 0);
+					const bufContent = Buffer.from(WSAuthServer.NodeConfig.www.localLoginUri);
+
+					wsClient.send(Buffer.concat([
+						code,
+						bufContent
+					]));
+				}
+				break;
 			case AuthTypes.GOOGLE:
 				Logger(0, "handleAuthMessage", `New google auth message`);
 				const gc = this.clients.get("google");
@@ -456,12 +585,14 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				const user: GoogleOpenIdData = await gc.userinfo(tokenSet);
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
-				res.status(200).send(content).end();
 
-
-				const U = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.GOOGLE) || User.createFromGoogle(user);
 
 				const wsClient = this.getWsClientByNONCE(nonce);
+				const U = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.GOOGLE) || User.createFromGoogle(user, wsClient.data.user);
+				// set access_token cookie to remember user
+				res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.GOOGLE, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
+				res.status(200).send(content).end();
+				this.Storage.saveUser(U);
 				this.onUserLogin(wsClient, U);
 
 				Logger(0, "routeOpenIDGoogleCallback", `User logged in: ${U.exportProfile().name}`);
@@ -493,13 +624,15 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 					// max_age: 300
 				});
 				const user = await mc.userinfo(tokenSet);
+				const wsClient = this.getWsClientByNONCE(nonce);
 
-				const U = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.MICROSOFT) || User.createFromMicrosoft(user);
-
+				const U = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.MICROSOFT) || User.createFromMicrosoft(user, wsClient.data.user);
+				// set access_token cookie to remember user
+				res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.MICROSOFT, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
+				this.Storage.saveUser(U);
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
-				const wsClient = this.getWsClientByNONCE(nonce);
 				this.onUserLogin(wsClient, U);
 
 				Logger(0, "routeOpenIDMicrosoftCallback", `User logged in: ${U.exportProfile().name}`);
@@ -533,15 +666,16 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				const user = await mc.userinfo(tokenSet);
 
 				const userFromDB = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.TWITCH);
-				const createdUser = User.createFromTwitch(user);
+				const wsClient = this.getWsClientByNONCE(nonce);
+				const U = userFromDB ? userFromDB : User.createFromTwitch(user, wsClient.data.user);
 
-				Logger(0, "routeOpenIDTwitchCallback", `userFromDB: ${userFromDB}\ncreatedUser${createdUser}`);
-				const U = userFromDB || createdUser;
+				// set access_token cookie to remember user
+				res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.TWITCH, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
+				this.Storage.saveUser(U);
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
-				const wsClient = this.getWsClientByNONCE(nonce);
 				if (!wsClient) {
 					throw `no wsClient found for nonce=>${nonce}`
 				}
@@ -579,13 +713,17 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				// Logger(0, "routeOpenIDSteamCallback", steamId64, profile.response.players);
 				const [user] = profile.response.players;
 
-				const U = this.Storage.fetchUserByOpenId(user.steamid, OpenIdServiceIndex.STEAM) || User.createFromSteam(user);
+				const wsClient = this.getWsClientByNONCE(nonce);
+				const U = this.Storage.fetchUserByOpenId(user.steamid, OpenIdServiceIndex.STEAM) || User.createFromSteam(user, wsClient.data.user);
+
+				// set access_token cookie to remember user
+				res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.STEAM, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
+				this.Storage.saveUser(U);
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 				res.status(200).send(content).end();
 
 
-				const wsClient = this.getWsClientByNONCE(nonce);
 				this.onUserLogin(wsClient, U);
 
 				Logger(0, "routeOpenIDMicrosoftCallback", `User logged in: ${U.exportProfile().name}`);
@@ -614,11 +752,12 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				const { code, state } = req.query;
 
 				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
-				res.status(200).send(content).end();
+
 
 				if (state !== wsClient.data.fbstate) {
-					Logger(511, "", `unequal state during fb-login process! is: ${state} expected: ${wsClient.data.fbstate}`);
+					Logger(511, "routeOpenIDFacebookLoginCallback", `unequal state during fb-login process! is: ${state} expected: ${wsClient.data.fbstate}`);
 					// todo: message to frontend
+					res.status(200).send(content).end();
 					return;
 				}
 				const accessKeyRaw = await getPromise(`https://graph.facebook.com/v5.0/oauth/access_token?client_id=${config.params.client_id}&redirect_uri=${config.params.redirect_uri}&client_secret=${config.client_secret}&code=${code}`);
@@ -637,7 +776,12 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 					profile: profileRaw,
 				};
 
-				const U = this.Storage.fetchUserByOpenId(openIdData.sub, OpenIdServiceIndex.FACEBOOK) || User.createFromFacebook(openIdData);
+				const U = this.Storage.fetchUserByOpenId(openIdData.sub, OpenIdServiceIndex.FACEBOOK) || User.createFromFacebook(openIdData, wsClient.data.user);
+				// set access_token cookie to remember user
+				res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.FACEBOOK, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
+				this.Storage.saveUser(U);
+				res.status(200).send(content).end();
+
 				this.onUserLogin(wsClient, U);
 
 				Logger(0, "routeOpenIDFacebookCallback", `User logged in: ${U.exportProfile().name}`);
@@ -724,6 +868,29 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 		}
 	}
 
+	/**
+	 *
+	 *
+	 * @protected
+	 * @returns {RequestHandlerParams}
+	 * @memberof WSAuthServer
+	 */
+	protected routeLoginLocal(): RequestHandlerParams {
+		return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			const { nonce } = this.getCookies(req);
+
+			const wsClient = this.getWsClientByNONCE(nonce);
+			// guest login
+			const U = new User();
+			this.Storage.saveUser(U);
+
+			res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.LOCAL, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
+			const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
+			res.status(200).send(content).end();
+			this.onUserLogin(wsClient, U);
+			Logger(0, "routeOpenIDFacebookCallback", `Guest logged in: ${U.exportProfile().name}`);
+		}
+	}
 
 	/**
 	 *
@@ -763,7 +930,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @returns {{ nonce?: string }}
 	 * @memberof WSAuthServer
 	 */
-	protected getCookies(req: IncomingMessage): { nonce?: string } {
+	protected getCookies(req: IncomingMessage): { nonce?: string, access_token?: string } {
 		const cookies = {};
 		(req.headers.cookie || "").split("; ").forEach((v) => {
 			const [key, value] = v.split("=");
@@ -798,10 +965,39 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 */
 	protected getWSClientsByUserId(id: string): ExtendedWSClient<User>[] {
 		const clients = Array.from<ExtendedWSClient<User>>(this.wsServer.clients.values() as IterableIterator<ExtendedWSClient<User>>).filter((v: ExtendedWSClient<User>) => v.OPEN && v.data.user && v.data.user.id === id);
-		if (clients.length > 0) {
-			Logger(111, "getWSClientByUserId", `Multiple websocket clients(${clients.length}) found with userId=>${id}`);
+		if (clients.length > 1) {
+			Logger(111, "getWSClientByUserId", `Multiple websocket clients(${clients.length}) found with userId=>${id}`, clients.map(C => C.data.id));
 		}
 		return clients;
+	}
+
+	/**
+	 *
+	 *
+	 * @protected
+	 * @param {User} user
+	 * @memberof WSAuthServer
+	 */
+	protected boadcastUser(user: User): void {
+		const responseCode = Buffer.alloc(2);
+		responseCode.writeUInt8(wsCodes.USER, 0);
+		responseCode.writeUInt8(userCodes.OTHER, 1);
+
+		const userMessage = Buffer.concat([
+			responseCode,
+			Buffer.from(JSON.stringify(user.exportProfile())),
+			// chatUser.exportToBuffer()
+		]);
+
+		this.wsServer.clients.forEach((C: ExtendedWSClient<User>) => {
+			const userA = C.data.user;
+			const userB = user;
+			const sameUser = !userA || !userB ? false : userA.id === userB.id;
+			if (sameUser || !C.OPEN) {
+				return;
+			}
+			C.send(userMessage);
+		});
 	}
 
 	/**

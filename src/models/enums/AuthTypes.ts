@@ -8,5 +8,7 @@ export enum AuthTypes {
 	PHANTAUTH,
 	FACEBOOK,
 	STEAM,
-	TWITCH
+	TWITCH,
+
+	LOGOUT=255,
 }
