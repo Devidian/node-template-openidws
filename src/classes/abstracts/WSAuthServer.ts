@@ -7,7 +7,7 @@ import { readFileSync } from "fs";
 import { IncomingMessage, Server } from "http";
 import { Client, generators, Issuer } from "openid-client";
 import { basename, resolve } from "path";
-import { get as getPromise } from "request-promise-native";
+import { get as getPromise, RequestPromiseOptions } from "request-promise-native";
 import { isBuffer } from "util";
 import { Data, Server as wss } from "ws";
 import { NodeConfig, rootDir } from "@/config";
@@ -19,6 +19,8 @@ import express = require("express");
 import favicon = require("serve-favicon");
 import querystring = require("querystring");
 import uuidv4 = require("uuid/v4");
+import { Loglevel } from "@/lib/models/Loglevel";
+import { UriOptions } from "request";
 
 /**
  *
@@ -121,6 +123,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 		this.configureWebServer();
 		// others
 		this.wwwApplication.get("*", this.routeNotAvailable());
+		this.wwwApplication.post("*", this.routeNotAvailable());
 		// END ROUTES	//
 
 		this.wwwServer = this.wwwApplication.listen(WSAuthServer.NodeConfig.www.port);
@@ -324,7 +327,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 */
 	protected async createIssuer(): Promise<void> {
 		const openIDConfig = WSAuthServer.NodeConfig.openid;
-		if(!openIDConfig){
+		if (!openIDConfig) {
 			return;
 		}
 		// Google
@@ -493,13 +496,13 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 					const nonce = wsClient.data.nonce;
 					Logger(0, "handleAuthMessage", `Using ${nonce} for twitch authorizationUrl`);
 					const url = tc.authorizationUrl({
-						scope: ["openid"].join(" "), //
+						scope: ["openid", "user:read:email", "user_read"].join(" "), //
 						response_mode: 'form_post',
 						response_type: "code",
 						nonce: nonce,
 						claims: JSON.stringify({
 							"id_token": {
-								"email_verified": null
+								"email_verified": null,
 							},
 							"userinfo": {
 								"email": null,
@@ -652,18 +655,39 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 */
 	protected routeOpenIDTwitchCallback(): RequestHandlerParams {
 		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+			const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 			try {
 				const config = WSAuthServer.NodeConfig.openid.twitch;
 				const { nonce } = this.getCookies(req);
 				const mc = this.clients.get("twitch");
 				const params = mc.callbackParams(req);
 				const [redirectUri] = config.redirect_uris; // Todo: handle multiple redirect uris (is there any case=?)
-				// Logger(0, "routeOpenIDTwitchCallback", `Authorization callback ${redirectUri} uses nonce=>${nonce} and params=>`, params);
+				Logger(Loglevel.VERBOSE, "routeOpenIDTwitchCallback", `Authorization callback ${redirectUri} uses nonce=>${nonce} and params=>`, params);
 				const tokenSet = await mc.callback(redirectUri, params, {
 					nonce: nonce,
 					// max_age: 300
 				});
-				const user = await mc.userinfo(tokenSet);
+				Logger(Loglevel.VERBOSE, "routeOpenIDTwitchCallback", `tokenSet=>`, tokenSet, tokenSet.claims());
+				// const user = await mc.userinfo(tokenSet, { tokenType: tokenSet.token_type, verb: "GET", via: "header" });
+
+				const opt: UriOptions & RequestPromiseOptions = {
+					uri: `https://id.twitch.tv/oauth2/userinfo`,
+					headers: {
+						"Client-ID": config.client_id
+					},
+					auth: {
+						bearer: tokenSet.access_token,
+						sendImmediately: true
+					},
+					qs: {
+						// user_id: byId,
+						// user_login: byLogin
+					},
+					json: true
+				};
+
+				const user = await getPromise(opt);
+				Logger(Loglevel.VERBOSE, "routeOpenIDTwitchCallback", user);
 
 				const userFromDB = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.TWITCH);
 				const wsClient = this.getWsClientByNONCE(nonce);
@@ -673,18 +697,17 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				res.cookie("access_token", U.createAccessToken(OpenIdServiceIndex.TWITCH, req.connection.remoteAddress, req.headers["user-agent"]).token, { secure: true, domain: WSAuthServer.NodeConfig.ws.cookieDomain, maxAge: 1000 * 60 * 60 * 24 * 7 });
 				this.Storage.saveUser(U);
 
-				const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
-				res.status(200).send(content).end();
-
 				if (!wsClient) {
 					throw `no wsClient found for nonce=>${nonce}`
 				}
 				this.onUserLogin(wsClient, U);
 
-				Logger(0, "routeOpenIDTwitchCallback", `User logged in: ${U.exportProfile().name}`);
+				Logger(Loglevel.VERBOSE + 1, "routeOpenIDTwitchCallback", `User logged in: ${U.exportProfile().name}`);
 			} catch (error) {
 				Logger(911, "@W" + MyProcess.id, "[routeOpenIDTwitchCallback]", error);
-				res.status(500).end();
+				// res.status(500).end();
+			} finally {
+				res.status(200).send(content).end();
 			}
 		}
 	}
