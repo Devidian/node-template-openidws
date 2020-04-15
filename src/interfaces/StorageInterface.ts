@@ -1,4 +1,4 @@
-import { User } from "@/classes/User";
+import { User } from "@/models/User";
 import { OpenIdServiceIndex } from "../enums/OpenIdServiceIndex";
 
 export interface StorageInterface<UC extends User> {

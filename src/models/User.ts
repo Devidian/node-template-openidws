@@ -1,5 +1,6 @@
 import uuidv4 = require("uuid/v4");
-import { DatabaseUser, FacebookOpenIdData, GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, OpenIdServiceIndex, SteamOpenIdData, TwitchOpenIdData, UserDevice } from "@/models";
+import { DatabaseUser, FacebookOpenIdData, GoogleOpenIdData, MicrosoftOpenIdData, OpenIdData, SteamOpenIdData, TwitchOpenIdData, UserDevice } from "@/interfaces";
+import { OpenIdServiceIndex} from "@/enums";
 import { isNull } from "util";
 
 export class User {

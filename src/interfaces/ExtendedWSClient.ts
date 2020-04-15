@@ -1,4 +1,4 @@
-import { User } from "@/classes/User";
+import { User } from "@/models/User";
 import WebSocket = require("ws");
 /**
  *

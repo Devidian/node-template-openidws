@@ -1,26 +1,26 @@
 'use strict';
+import { NodeConfig, rootDir } from "@/config";
+import { AuthTypes, OpenIdServiceIndex, userCodes, wsCodes } from "@/enums";
+import { ExtendedWSClient, FacebookOpenIdData, FacebookOpenIdProfile, FacebookSignedPayload, GoogleOpenIdData, StorageInterface } from "@/interfaces";
+import { Loglevel } from "@/lib/models/Loglevel";
+import { Logger } from "@/lib/tools/Logger";
+import axios from 'axios';
 import { worker as MyProcess } from "cluster";
 import { createHmac } from "crypto";
-import { Application } from "express";
+import { Application, json, NextFunction, urlencoded } from "express";
 import { RequestHandlerParams } from "express-serve-static-core";
 import { readFileSync } from "fs";
 import { IncomingMessage, Server } from "http";
 import { Client, generators, Issuer } from "openid-client";
 import { basename, resolve } from "path";
-import { get as getPromise, RequestPromiseOptions } from "request-promise-native";
 import { isBuffer } from "util";
 import { Data, Server as wss } from "ws";
-import { NodeConfig, rootDir } from "@/config";
-import { Logger } from "@/lib/tools/Logger";
-import { AuthTypes, ExtendedWSClient, FacebookOpenIdData, FacebookOpenIdProfile, FacebookSignedPayload, GoogleOpenIdData, OpenIdServiceIndex, StorageInterface, userCodes, wsCodes } from "@/models";
-import { User } from "../User";
+import { User } from "../../models/User";
 import { WorkerProcess } from "./WorkerProcess";
 import express = require("express");
 import favicon = require("serve-favicon");
 import querystring = require("querystring");
 import uuidv4 = require("uuid/v4");
-import { Loglevel } from "@/lib/models/Loglevel";
-import { UriOptions } from "request";
 
 /**
  *
@@ -113,7 +113,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 		this.wwwApplication = express();
 		// CONFIGURATION //
 		this.wwwApplication.disable('x-powered-by');
-		this.wwwApplication.use((err: express.Errback, req: express.Request, res: express.Response, next: express.NextFunction) => {
+		this.wwwApplication.use((err, req, res, next) => {
 			Logger(911, "express", err);
 			res.status(500).end();
 		});
@@ -136,7 +136,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected configureWebServer(): void {
-		const apiMiddleware = [express.json({}), express.urlencoded({ extended: true })];
+		const apiMiddleware = [json({}), urlencoded({ extended: true })];
 		// this.wwwApplication.get("/login/google/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		// this.wwwApplication.get("/login/microsoft/", apiMiddleware, this.routeOpenIDGoogleCallback());
 		this.wwwApplication.get("/login/facebook/", apiMiddleware, this.routeOpenIDFacebookLoginCallback());
@@ -573,7 +573,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDGoogleCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			try {
 				const config = WSAuthServer.NodeConfig.openid.google;
 				const { nonce } = this.getCookies(req);
@@ -614,7 +614,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDMicrosoftCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			try {
 				const config = WSAuthServer.NodeConfig.openid.microsoft;
 				const { nonce } = this.getCookies(req);
@@ -654,7 +654,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDTwitchCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			const content = readFileSync(resolve(rootDir, "assets", "selfclose.html")).toString("utf8");
 			try {
 				const config = WSAuthServer.NodeConfig.openid.twitch;
@@ -670,23 +670,8 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				Logger(Loglevel.VERBOSE, "routeOpenIDTwitchCallback", `tokenSet=>`, tokenSet, tokenSet.claims());
 				// const user = await mc.userinfo(tokenSet, { tokenType: tokenSet.token_type, verb: "GET", via: "header" });
 
-				const opt: UriOptions & RequestPromiseOptions = {
-					uri: `https://id.twitch.tv/oauth2/userinfo`,
-					headers: {
-						"Client-ID": config.client_id
-					},
-					auth: {
-						bearer: tokenSet.access_token,
-						sendImmediately: true
-					},
-					qs: {
-						// user_id: byId,
-						// user_login: byLogin
-					},
-					json: true
-				};
 
-				const user = await getPromise(opt);
+				const { data: user } = await axios.get("https://id.twitch.tv/oauth2/userinfo", { headers: { "Client-ID": config.client_id, "Authorization": `Bearer ${tokenSet.access_token}` }, responseType: "json" });
 				Logger(Loglevel.VERBOSE, "routeOpenIDTwitchCallback", user);
 
 				const userFromDB = this.Storage.fetchUserByOpenId(user.sub, OpenIdServiceIndex.TWITCH);
@@ -720,7 +705,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDSteamCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			try {
 				const config = WSAuthServer.NodeConfig.openid.steam;
 				const { nonce } = this.getCookies(req);
@@ -730,8 +715,15 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 				const api_method = "GetPlayerSummaries";
 				const api_version = "0002";
 
-				const profileRaw = await getPromise(`https://api.steampowered.com/${api_interface}/${api_method}/v${api_version}/?key=${config.api_key}&format=json&steamids=${steamId64}`);
-				const profile: { response: { players: any[] } } = JSON.parse(profileRaw);
+				// const profileRaw = await getPromise(`https://api.steampowered.com/${api_interface}/${api_method}/v${api_version}/?key=${config.api_key}&format=json&steamids=${steamId64}`);
+				const { data: profileRaw } = await axios.get(`https://api.steampowered.com/${api_interface}/${api_method}/v${api_version}/`, {
+					params: {
+						key: config.api_key,
+						format: "json",
+						steamids: steamId64
+					}
+				})
+				const profile: { response: { players: any[] } } = profileRaw;//JSON.parse(profileRaw);
 
 				// Logger(0, "routeOpenIDSteamCallback", steamId64, profile.response.players);
 				const [user] = profile.response.players;
@@ -765,7 +757,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDFacebookLoginCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			try {
 				const config = WSAuthServer.NodeConfig.openid.facebook;
 				const { nonce } = this.getCookies(req);
@@ -783,12 +775,22 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 					res.status(200).send(content).end();
 					return;
 				}
-				const accessKeyRaw = await getPromise(`https://graph.facebook.com/v5.0/oauth/access_token?client_id=${config.params.client_id}&redirect_uri=${config.params.redirect_uri}&client_secret=${config.client_secret}&code=${code}`);
+				// const accessKeyRaw = await getPromise(`https://graph.facebook.com/v5.0/oauth/access_token?client_id=${config.params.client_id}&redirect_uri=${config.params.redirect_uri}&client_secret=${config.client_secret}&code=${code}`);
+				const { data: accessKeyRaw } = await axios.get("https://graph.facebook.com/v5.0/oauth/access_token", {
+					params: {
+						client_id: config.params.client_id,
+						redirect_uri: config.params.redirect_uri,
+						client_secret: config.client_secret,
+						code: code,
+					}
+				})
 
-				const { access_token, token_type, expires_in } = JSON.parse(accessKeyRaw);
+				const { access_token, token_type, expires_in } = accessKeyRaw;//JSON.parse(accessKeyRaw);
 
 
-				const profileRaw: FacebookOpenIdProfile = JSON.parse(await getPromise(`https://graph.facebook.com/v5.0/me?fields=id%2Cname%2Cpicture&access_token=${access_token}`));
+				const profileRaw: FacebookOpenIdProfile = (await axios.get("https://graph.facebook.com/v5.0/me", { params: { fields: "id,name,picture", access_token: access_token } })).data;
+
+				// JSON.parse(await getPromise(`https://graph.facebook.com/v5.0/me?fields=id%2Cname%2Cpicture&access_token=${access_token}`));
 
 				// const { id, name, picture } = JSON.parse(profileRaw);
 				const openIdData: FacebookOpenIdData = {
@@ -851,7 +853,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDFacebookLogoutCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			try {
 				const { signed_request } = req.body;
 				const data = this.decodeFacebookSignedRequest(signed_request);
@@ -875,7 +877,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeOpenIDFacebookDeleteCallback(): RequestHandlerParams {
-		return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return async (req, res, next: NextFunction) => {
 			try {
 				const { signed_request } = req.body;
 				const data = this.decodeFacebookSignedRequest(signed_request);
@@ -899,7 +901,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeLoginLocal(): RequestHandlerParams {
-		return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return (req, res, next: NextFunction) => {
 			const { nonce } = this.getCookies(req);
 
 			const wsClient = this.getWsClientByNONCE(nonce);
@@ -923,7 +925,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeNotAvailable(): RequestHandlerParams {
-		return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return (req, res, next: NextFunction) => {
 			const msg404 = `${req.path} is not yet available on this server [404]`;
 			const queryString = JSON.stringify(req.query);
 			const body = req.body;
@@ -940,7 +942,7 @@ export abstract class WSAuthServer<T extends StorageInterface<any>> extends Work
 	 * @memberof WSAuthServer
 	 */
 	protected routeTemplate(): RequestHandlerParams {
-		return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+		return (req, res, next: NextFunction) => {
 
 		}
 	}

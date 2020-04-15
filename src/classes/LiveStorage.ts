@@ -1,6 +1,7 @@
 import { Logger } from "@/lib/tools/Logger";
-import { DatabaseUser, OpenIdServiceIndex, StorageInterface } from "@/models";
-import { User } from "./User";
+import { DatabaseUser, StorageInterface } from "@/interfaces";
+import { OpenIdServiceIndex } from "@/enums";
+import { User } from "../models/User";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { rootDir } from "@/config";
