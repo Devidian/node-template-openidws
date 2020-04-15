@@ -1,12 +1,12 @@
 import { Logger } from "@/lib/tools/Logger";
-import { DatabaseUser, StorageInterface } from "@/interfaces";
+import { DatabaseUser, UserStorageInterface } from "@/interfaces";
 import { OpenIdServiceIndex } from "@/enums";
 import { User } from "../models/User";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { rootDir } from "@/config";
 
-export class LiveStorage implements StorageInterface<User> {
+export class LiveStorage implements UserStorageInterface<User> {
 
 	protected UserStorage: Map<string, DatabaseUser> = new Map<string, DatabaseUser>();
 	// Store guest logins seperately

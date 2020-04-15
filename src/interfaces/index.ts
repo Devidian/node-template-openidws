@@ -8,7 +8,7 @@ export * from "./GoogleOpenIdData";
 export * from "./MicrosoftOpenIdData";
 export * from "./OpenIdData";
 export * from "./SteamOpenIdData";
-export * from "./StorageInterface";
+export * from "./UserStorageInterface";
 export * from "./TwitchOpenIdData";
 export * from "./UserDevice";
 export * from "./WebSocketObjectInterface";

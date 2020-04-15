@@ -1,7 +1,7 @@
 'use strict';
 import { NodeConfig, rootDir } from "@/config";
 import { AuthTypes, OpenIdServiceIndex, userCodes, wsCodes } from "@/enums";
-import { ExtendedWSClient, FacebookOpenIdData, FacebookOpenIdProfile, FacebookSignedPayload, GoogleOpenIdData, StorageInterface } from "@/interfaces";
+import { ExtendedWSClient, FacebookOpenIdData, FacebookOpenIdProfile, FacebookSignedPayload, GoogleOpenIdData, UserStorageInterface } from "@/interfaces";
 import { Loglevel } from "@/lib/models/Loglevel";
 import { Logger } from "@/lib/tools/Logger";
 import axios from 'axios';
@@ -29,7 +29,7 @@ import uuidv4 = require("uuid/v4");
  * @class WSAuthServer
  * @extends {WorkerProcess}
  */
-export abstract class WSAuthServer<T extends StorageInterface<any>> extends WorkerProcess {
+export abstract class WSAuthServer<T extends UserStorageInterface<any>> extends WorkerProcess {
 	// protected static _NodeConfig: NodeConfig = null;
 	protected static highlander = null;
 
