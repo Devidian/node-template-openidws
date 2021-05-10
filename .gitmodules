@@ -1,3 +1,4 @@
-[submodule "src/lib"]
-	path = src/lib
-	url = git@github.com:Devidian/OmegaLib.git
+[submodule "src/utils"]
+	path = src/utils
+	url = git@github.com:Devidian/OmegaUtils.git
+	branch = master
