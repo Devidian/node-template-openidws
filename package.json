@@ -14,7 +14,7 @@
 		"rxjs": "^6.5.5",
 		"serve-favicon": "^2.5.0",
 		"uuid": "^7.0.3",
-		"ws": "^7.2.3"
+		"ws": "^7.4.6"
 	},
 	"devDependencies": {
 		"@types/express": "^4.17.6",
